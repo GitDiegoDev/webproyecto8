@@ -14,6 +14,8 @@ const STORE_NAME = 'clients';
 
 const TYPE_CONFIG = {
     jubilado: { label: 'Jubilado', icon: 'fa-user-clock', color: '#6b4c9a', badgeClass: 'badge-jubilado' },
+    docente: { label: 'Docente', icon: 'fa-chalkboard-user', color: '#ec4899', badgeClass: 'badge-docente' },
+    policia: { label: 'Policía', icon: 'fa-shield-halved', color: '#4f46e5', badgeClass: 'badge-policia' },
     privado: { label: 'Privado', icon: 'fa-briefcase', color: '#2563eb', badgeClass: 'badge-privado' },
     municipal: { label: 'Municipal', icon: 'fa-building', color: '#059669', badgeClass: 'badge-municipal' },
     provincial: { label: 'Provincial', icon: 'fa-landmark', color: '#d97706', badgeClass: 'badge-provincial' }
@@ -143,7 +145,15 @@ function sanitizeClientSchema(client) {
     if (typeof client.loanAmount !== 'number') client.loanAmount = parseCurrencyInput(client.loanAmount);
     if (typeof client.installmentAmount !== 'number') client.installmentAmount = parseCurrencyInput(client.installmentAmount);
     if (!client.salaryDay) client.salaryDay = client.paymentDay || 10;
+    if (typeof client.dni !== 'string') client.dni = client.dni ? client.dni.toString().trim() : '';
     if (!Array.isArray(client.payments)) client.payments = [];
+}
+
+function getDniTermination(dni) {
+    if (!dni) return null;
+    const digits = dni.toString().replace(/\D/g, '');
+    if (!digits) return null;
+    return digits.slice(-1);
 }
 
 function parseCurrencyInput(val) {
@@ -169,6 +179,7 @@ function getDemoData() {
         {
             id: '1',
             name: 'Roberto Gómez',
+            dni: '14.234.567',
             type: 'jubilado',
             salaryDay: currentDay > 2 ? currentDay - 2 : 28,
             paymentDay: currentDay,
@@ -188,6 +199,7 @@ function getDemoData() {
         {
             id: '2',
             name: 'María Elena Sosa',
+            dni: '18.456.789',
             type: 'jubilado',
             salaryDay: 27,
             paymentDay: currentDay === 31 ? 1 : currentDay + 1, // Tomorrow
@@ -204,7 +216,44 @@ function getDemoData() {
         },
         {
             id: '3',
+            name: 'Patricia Morales',
+            dni: '28.765.432',
+            type: 'docente',
+            salaryDay: 2,
+            paymentDay: 5,
+            loanAmount: 180000,
+            installmentAmount: 22000,
+            phone: '3755-789012',
+            email: 'pmorales@escuela.edu.ar',
+            notes: 'Escuela Normal N° 4',
+            paymentStatus: 'pending',
+            isOverdue: false,
+            daysOverdue: 0,
+            lastPaymentDate: '',
+            payments: []
+        },
+        {
+            id: '4',
+            name: 'Sgto. Ramón Fernández',
+            dni: '25.345.678',
+            type: 'policia',
+            salaryDay: 3,
+            paymentDay: 6,
+            loanAmount: 250000,
+            installmentAmount: 31000,
+            phone: '3755-890123',
+            email: '',
+            notes: 'Comisaría Seccional 1ra',
+            paymentStatus: 'pending',
+            isOverdue: false,
+            daysOverdue: 0,
+            lastPaymentDate: '',
+            payments: []
+        },
+        {
+            id: '5',
             name: 'Carlos Benítez',
+            dni: '23.456.789',
             type: 'privado',
             salaryDay: 10,
             paymentDay: currentDay > 7 ? currentDay - 7 : 1,
@@ -220,8 +269,9 @@ function getDemoData() {
             payments: []
         },
         {
-            id: '4',
+            id: '6',
             name: 'Ana Laura Fernández',
+            dni: '31.987.654',
             type: 'privado',
             salaryDay: 5,
             paymentDay: 20,
@@ -239,8 +289,9 @@ function getDemoData() {
             ]
         },
         {
-            id: '5',
+            id: '7',
             name: 'Jorge Martínez',
+            dni: '29.111.222',
             type: 'municipal',
             salaryDay: 1,
             paymentDay: 5,
@@ -256,8 +307,9 @@ function getDemoData() {
             payments: []
         },
         {
-            id: '6',
+            id: '8',
             name: 'Silvia Ríos',
+            dni: '26.333.444',
             type: 'provincial',
             salaryDay: 30,
             paymentDay: currentDay > 3 ? currentDay - 3 : 1,
@@ -337,6 +389,7 @@ const els = {
     clientForm: document.getElementById('clientForm'),
     clientId: document.getElementById('clientId'),
     clientName: document.getElementById('clientName'),
+    clientDni: document.getElementById('clientDni'),
     clientType: document.getElementById('clientType'),
     salaryDay: document.getElementById('salaryDay'),
     paymentDay: document.getElementById('paymentDay'),
@@ -502,6 +555,7 @@ function getFilteredClients() {
         const q = searchQuery.toLowerCase();
         filtered = filtered.filter(c =>
             c.name.toLowerCase().includes(q) ||
+            (c.dni && c.dni.toLowerCase().includes(q)) ||
             (c.phone && c.phone.includes(q)) ||
             (c.email && c.email.toLowerCase().includes(q)) ||
             (c.notes && c.notes.toLowerCase().includes(q))
@@ -528,7 +582,7 @@ function getFilteredClients() {
 
 function groupClients(filtered) {
     const groups = {};
-    const order = ['jubilado', 'privado', 'municipal', 'provincial'];
+    const order = ['jubilado', 'docente', 'policia', 'privado', 'municipal', 'provincial'];
 
     filtered.forEach(client => {
         if (!groups[client.type]) groups[client.type] = [];
@@ -634,6 +688,14 @@ function renderClientCard(client) {
         todayBadgeHtml = `<span class="badge badge-tomorrow"><i class="fas fa-bell"></i> Vence Cuota Mañana</span>`;
     }
 
+    const dniTermination = getDniTermination(client.dni);
+    let dniHtml = '';
+    if (client.dni) {
+        dniHtml = `<span class="client-dni" title="DNI / Documento">
+            <i class="fas fa-id-card"></i> DNI: ${escapeHtml(client.dni)} ${dniTermination !== null ? `<span class="dni-term">(Term. ${dniTermination})</span>` : ''}
+        </span>`;
+    }
+
     const payBtnText = client.paymentStatus === 'paid' ? '<i class="fas fa-check"></i> Pagado' : 'Registrar pago';
     const payBtnClass = client.paymentStatus === 'paid' ? 'paid' : '';
 
@@ -646,6 +708,7 @@ function renderClientCard(client) {
                         <span class="badge ${typeConfig.badgeClass}">
                             <i class="fas ${typeConfig.icon}"></i> ${typeConfig.label}
                         </span>
+                        ${dniHtml}
                         ${todayBadgeHtml}
                         <span class="payment-day" title="Día de cobro de sueldo">
                             <i class="fas fa-wallet"></i> Sueldo: día ${client.salaryDay || '-'}
@@ -694,6 +757,7 @@ function openAddModal() {
     els.modalTitle.textContent = 'Nuevo Cliente';
     els.clientForm.reset();
     els.clientId.value = '';
+    els.clientDni.value = '';
     openModal(els.clientModal);
     els.clientName.focus();
 }
@@ -707,6 +771,7 @@ function editClient(id) {
     els.modalTitle.textContent = 'Editar Cliente';
     els.clientId.value = client.id;
     els.clientName.value = client.name;
+    els.clientDni.value = client.dni || '';
     els.clientType.value = client.type;
     els.salaryDay.value = client.salaryDay || 10;
     els.paymentDay.value = client.paymentDay;
@@ -732,6 +797,7 @@ function handleSaveClient(e) {
 
     const clientData = {
         name: els.clientName.value.trim(),
+        dni: els.clientDni.value.trim(),
         type: els.clientType.value,
         salaryDay: parseInt(els.salaryDay.value) || 10,
         paymentDay: parseInt(els.paymentDay.value),
@@ -792,10 +858,13 @@ function openPaymentModal(id) {
     const client = clients.find(c => c.id === id);
     if (!client) return;
 
+    const dniTermination = getDniTermination(client.dni);
+    const dniText = client.dni ? ` • DNI: ${escapeHtml(client.dni)}${dniTermination !== null ? ` (Term. ${dniTermination})` : ''}` : '';
+
     els.paymentClientId.value = id;
     els.paymentClientPreview.innerHTML = `
         <div class="preview-name">${escapeHtml(client.name)}</div>
-        <div class="preview-type">${TYPE_CONFIG[client.type].label} • Cobra Sueldo día ${client.salaryDay || '-'} • Vence Cuota día ${client.paymentDay}</div>
+        <div class="preview-type">${TYPE_CONFIG[client.type].label}${dniText} • Cobra Sueldo día ${client.salaryDay || '-'} • Vence Cuota día ${client.paymentDay}</div>
         ${client.installmentAmount > 0 ? `<div style="font-size:0.8125rem;color:var(--primary);font-weight:700;margin-top:2px;">Cuota mensual: ${formatCurrency(client.installmentAmount)}</div>` : ''}
     `;
 
