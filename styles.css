@@ -436,6 +436,10 @@ body {
 /* Group Colors */
 .group-jubilado .group-title { color: #6b4c9a; }
 .group-jubilado .group-title i { color: #6b4c9a; }
+.group-docente .group-title { color: #be185d; }
+.group-docente .group-title i { color: #be185d; }
+.group-policia .group-title { color: #4338ca; }
+.group-policia .group-title i { color: #4338ca; }
 .group-privado .group-title { color: #2563eb; }
 .group-privado .group-title i { color: #2563eb; }
 .group-municipal .group-title { color: #059669; }
@@ -524,9 +528,30 @@ body {
 }
 
 .badge-jubilado { background: #f3e8ff; color: #6b4c9a; }
+.badge-docente { background: #fce7f3; color: #be185d; }
+.badge-policia { background: #e0e7ff; color: #4338ca; }
 .badge-privado { background: #dbeafe; color: #2563eb; }
 .badge-municipal { background: #d1fae5; color: #059669; }
 .badge-provincial { background: #fef3c7; color: #d97706; }
+
+.client-dni {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.client-dni i {
+    color: var(--primary);
+    font-size: 0.75rem;
+}
+
+.dni-term {
+    color: var(--primary-dark);
+    font-weight: 700;
+}
 
 .badge-today {
     background: var(--accent);

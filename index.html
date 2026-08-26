@@ -74,6 +74,8 @@
                 <div class="filter-chips">
                     <button class="chip active" data-filter="all">Todos</button>
                     <button class="chip" data-filter="jubilado">Jubilados</button>
+                    <button class="chip" data-filter="docente">Docentes</button>
+                    <button class="chip" data-filter="policia">Policías</button>
                     <button class="chip" data-filter="privado">Privado</button>
                     <button class="chip" data-filter="municipal">Municipal</button>
                     <button class="chip" data-filter="provincial">Provincial</button>
@@ -142,15 +144,24 @@
                     <label for="clientName">Nombre completo *</label>
                     <input type="text" id="clientName" required placeholder="Ej: Juan Pérez" autocomplete="name">
                 </div>
-                <div class="form-group">
-                    <label for="clientType">Tipo de cliente *</label>
-                    <select id="clientType" required>
-                        <option value="">Seleccionar...</option>
-                        <option value="jubilado">Jubilado</option>
-                        <option value="privado">Privado</option>
-                        <option value="municipal">Municipal</option>
-                        <option value="provincial">Provincial</option>
-                    </select>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="clientDni">DNI / Documento</label>
+                        <input type="text" id="clientDni" inputmode="numeric" placeholder="Ej: 32.456.789">
+                        <span class="input-hint">Terminación para fecha cobro</span>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="clientType">Tipo de cliente *</label>
+                        <select id="clientType" required>
+                            <option value="">Seleccionar...</option>
+                            <option value="jubilado">Jubilado</option>
+                            <option value="docente">Docente</option>
+                            <option value="policia">Policía</option>
+                            <option value="privado">Privado</option>
+                            <option value="municipal">Municipal</option>
+                            <option value="provincial">Provincial</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group flex-1">
