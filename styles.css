@@ -1129,6 +1129,109 @@ form {
 }
 
 /* ========================================
+   SUMMARY MODAL STYLES
+   ======================================== */
+
+.summary-body {
+    padding: 1rem 1.25rem;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.summary-total-banner {
+    background: var(--accent-light);
+    color: var(--primary-dark);
+    padding: 0.625rem 0.875rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.summary-group {
+    margin-bottom: 1.25rem;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+}
+
+.summary-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.summary-group-header .group-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+}
+
+.summary-list {
+    padding-left: 1.25rem;
+    margin: 0;
+}
+
+.summary-item {
+    padding: 0.375rem 0;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.05);
+}
+
+.summary-item:last-child {
+    border-bottom: none;
+}
+
+.summary-item-content {
+    flex: 1;
+    color: var(--text-primary);
+}
+
+.summary-item-name {
+    font-weight: 600;
+}
+
+.summary-status-badge {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.summary-status-badge.status-paid {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.summary-status-badge.status-pending {
+    background: var(--warning-light);
+    color: #b45309;
+}
+
+.summary-status-badge.status-overdue {
+    background: var(--danger-light);
+    color: var(--danger);
+}
+
+.modal-footer {
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 0.625rem;
+}
+
+/* ========================================
    TOAST
    ======================================== */
 

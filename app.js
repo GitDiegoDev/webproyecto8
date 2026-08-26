@@ -423,6 +423,13 @@ const els = {
     cancelDeleteBtn: document.getElementById('cancelDeleteBtn'),
     confirmDeleteBtn: document.getElementById('confirmDeleteBtn'),
 
+    summaryBtn: document.getElementById('summaryBtn'),
+    summaryModal: document.getElementById('summaryModal'),
+    closeSummaryModal: document.getElementById('closeSummaryModal'),
+    closeSummaryBtn: document.getElementById('closeSummaryBtn'),
+    summaryBody: document.getElementById('summaryBody'),
+    copySummaryBtn: document.getElementById('copySummaryBtn'),
+
     toastContainer: document.getElementById('toastContainer')
 };
 
@@ -1023,6 +1030,20 @@ function setupEventListeners() {
     els.cancelDeleteBtn.addEventListener('click', () => closeModalFn(els.deleteModal));
     els.confirmDeleteBtn.addEventListener('click', handleDelete);
 
+    // Summary modal listeners
+    if (els.summaryBtn) {
+        els.summaryBtn.addEventListener('click', openSummaryModal);
+    }
+    if (els.closeSummaryModal) {
+        els.closeSummaryModal.addEventListener('click', () => closeModalFn(els.summaryModal));
+    }
+    if (els.closeSummaryBtn) {
+        els.closeSummaryBtn.addEventListener('click', () => closeModalFn(els.summaryModal));
+    }
+    if (els.copySummaryBtn) {
+        els.copySummaryBtn.addEventListener('click', copySummaryToClipboard);
+    }
+
     els.paymentForm.addEventListener('submit', handleSavePayment);
     els.isOverdue.addEventListener('change', toggleOverdueFields);
 
@@ -1076,6 +1097,115 @@ function registerServiceWorker() {
                 .catch(err => console.warn('ServiceWorker registration failed:', err));
         });
     }
+}
+
+// ========================================
+// SUMMARY VIEW
+// ========================================
+
+function openSummaryModal() {
+    renderSummaryView();
+    openModal(els.summaryModal);
+}
+
+function renderSummaryView() {
+    if (!els.summaryBody) return;
+
+    if (clients.length === 0) {
+        els.summaryBody.innerHTML = `
+            <div class="empty-state show">
+                <i class="fas fa-users-slash"></i>
+                <h3>No hay clientes registrados</h3>
+            </div>
+        `;
+        return;
+    }
+
+    const { groups, order } = groupClients(clients);
+
+    let html = `<div class="summary-total-banner">
+        <span>Total de Clientes: <strong>${clients.length}</strong></span>
+    </div>`;
+
+    order.forEach(type => {
+        const config = TYPE_CONFIG[type];
+        const groupClientsList = groups[type] || [];
+
+        html += `
+            <div class="summary-group group-${type}">
+                <div class="summary-group-header">
+                    <span class="group-title"><i class="fas ${config.icon}"></i> ${config.label}s</span>
+                    <span class="group-count">${groupClientsList.length}</span>
+                </div>
+                <ol class="summary-list">
+                    ${groupClientsList.map((client) => {
+                        const status = STATUS_CONFIG[client.paymentStatus];
+                        const dniText = client.dni ? ` (DNI: ${escapeHtml(client.dni)})` : '';
+                        const installmentText = client.installmentAmount > 0 ? ` - Cuota: ${formatCurrency(client.installmentAmount)}` : '';
+                        return `
+                            <li class="summary-item">
+                                <div class="summary-item-content">
+                                    <span class="summary-item-name">${escapeHtml(client.name)}</span>${escapeHtml(dniText)}${escapeHtml(installmentText)}
+                                </div>
+                                <span class="summary-status-badge status-${client.paymentStatus}">${status.label}</span>
+                            </li>
+                        `;
+                    }).join('')}
+                </ol>
+            </div>
+        `;
+    });
+
+    els.summaryBody.innerHTML = html;
+}
+
+function copySummaryToClipboard() {
+    if (clients.length === 0) {
+        showToast('No hay clientes para copiar', 'error');
+        return;
+    }
+
+    const { groups, order } = groupClients(clients);
+    let text = `RESUMEN GENERAL DE CLIENTES (${clients.length})\n\n`;
+
+    order.forEach(type => {
+        const config = TYPE_CONFIG[type];
+        const list = groups[type] || [];
+        text += `${config.label}s (${list.length}):\n`;
+        list.forEach((client, index) => {
+            const dniText = client.dni ? ` - DNI: ${client.dni}` : '';
+            const statusLabel = STATUS_CONFIG[client.paymentStatus] ? STATUS_CONFIG[client.paymentStatus].label : '';
+            const installmentText = client.installmentAmount > 0 ? ` - Cuota: ${formatCurrency(client.installmentAmount)}` : '';
+            text += `${index + 1}. ${client.name}${dniText}${installmentText} [${statusLabel}]\n`;
+        });
+        text += '\n';
+    });
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text.trim()).then(() => {
+            showToast('Resumen copiado al portapapeles', 'success');
+        }).catch(() => {
+            fallbackCopyText(text.trim());
+        });
+    } else {
+        fallbackCopyText(text.trim());
+    }
+}
+
+function fallbackCopyText(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+        document.execCommand('copy');
+        showToast('Resumen copiado al portapapeles', 'success');
+    } catch (err) {
+        showToast('No se pudo copiar el resumen', 'error');
+    }
+    document.body.removeChild(textArea);
 }
 
 // ========================================
