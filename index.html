@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Palmares Efectivo en el Acto - Gestión de Clientes</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-brand">
+                <div class="logo">
+                    <i class="fas fa-hand-holding-dollar"></i>
+                </div>
+                <div class="brand-info">
+                    <h1>Palmares</h1>
+                    <span class="tagline">Efectivo en el Acto</span>
+                </div>
+            </div>
+            <div class="header-stats">
+                <div class="stat-item">
+                    <span class="stat-number" id="totalClients">0</span>
+                    <span class="stat-label">Clientes</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="pendingPayments">0</span>
+                    <span class="stat-label">Pendientes</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="overdueClients">0</span>
+                    <span class="stat-label">Atrasados</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Search & Filter Bar -->
+        <div class="toolbar">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="Buscar cliente...">
+            </div>
+            <button class="btn-filter" id="filterBtn">
+                <i class="fas fa-filter"></i>
+            </button>
+            <button class="btn-primary" id="addClientBtn">
+                <i class="fas fa-plus"></i>
+                <span>Nuevo</span>
+            </button>
+        </div>
+
+        <!-- Filter Panel -->
+        <div class="filter-panel" id="filterPanel">
+            <div class="filter-group">
+                <label>Tipo de Cliente</label>
+                <div class="filter-chips">
+                    <button class="chip active" data-filter="all">Todos</button>
+                    <button class="chip" data-filter="jubilado">Jubilados</button>
+                    <button class="chip" data-filter="privado">Privado</button>
+                    <button class="chip" data-filter="municipal">Municipal</button>
+                    <button class="chip" data-filter="provincial">Provincial</button>
+                </div>
+            </div>
+            <div class="filter-group">
+                <label>Estado de Pago</label>
+                <div class="filter-chips">
+                    <button class="chip active" data-status="all">Todos</button>
+                    <button class="chip" data-status="paid">Pagado</button>
+                    <button class="chip" data-status="pending">Pendiente</button>
+                    <button class="chip" data-status="overdue">Atrasado</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Client Groups -->
+        <main class="clients-container" id="clientsContainer">
+            <!-- Groups will be rendered here -->
+        </main>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState">
+            <i class="fas fa-users-slash"></i>
+            <h3>No hay clientes</h3>
+            <p>Agrega tu primer cliente para comenzar</p>
+        </div>
+    </div>
+
+    <!-- Add/Edit Client Modal -->
+    <div class="modal" id="clientModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Nuevo Cliente</h2>
+                <button class="btn-close" id="closeModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="clientForm">
+                <input type="hidden" id="clientId">
+                <div class="form-group">
+                    <label for="clientName">Nombre completo *</label>
+                    <input type="text" id="clientName" required placeholder="Ej: Juan Pérez">
+                </div>
+                <div class="form-group">
+                    <label for="clientType">Tipo de cliente *</label>
+                    <select id="clientType" required>
+                        <option value="">Seleccionar...</option>
+                        <option value="jubilado">Jubilado</option>
+                        <option value="privado">Privado</option>
+                        <option value="municipal">Municipal</option>
+                        <option value="provincial">Provincial</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="paymentDay">Día de cobro *</label>
+                    <input type="number" id="paymentDay" min="1" max="31" required placeholder="Ej: 15">
+                    <span class="input-hint">Día del mes en que cobra</span>
+                </div>
+                <div class="form-group">
+                    <label for="clientPhone">Teléfono</label>
+                    <input type="tel" id="clientPhone" placeholder="Ej: 3755-123456">
+                </div>
+                <div class="form-group">
+                    <label for="clientEmail">Email</label>
+                    <input type="email" id="clientEmail" placeholder="Ej: cliente@email.com">
+                </div>
+                <div class="form-group">
+                    <label for="clientNotes">Notas</label>
+                    <textarea id="clientNotes" rows="2" placeholder="Observaciones..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelBtn">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar Cliente</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Payment Modal -->
+    <div class="modal" id="paymentModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2>Registrar Pago</h2>
+                <button class="btn-close" id="closePaymentModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="paymentForm">
+                <input type="hidden" id="paymentClientId">
+                <div class="client-preview" id="paymentClientPreview"></div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="hasPaid">
+                        <span class="checkmark"></span>
+                        <span class="label-text">¿Pagó este mes?</span>
+                    </label>
+                </div>
+                <div class="form-group" id="overdueGroup">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="isOverdue">
+                        <span class="checkmark"></span>
+                        <span class="label-text">¿Está atrasado?</span>
+                    </label>
+                </div>
+                <div class="form-group" id="daysOverdueGroup" style="display:none;">
+                    <label for="daysOverdue">Días de atraso</label>
+                    <input type="number" id="daysOverdue" min="1" value="1">
+                </div>
+                <div class="form-group">
+                    <label for="paymentDate">Fecha de registro</label>
+                    <input type="date" id="paymentDate">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelPaymentBtn">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation -->
+    <div class="modal" id="deleteModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2>¿Eliminar cliente?</h2>
+            </div>
+            <p class="modal-text">Esta acción no se puede deshacer.</p>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="cancelDeleteBtn">Cancelar</button>
+                <button type="button" class="btn-danger" id="confirmDeleteBtn">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
