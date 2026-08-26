@@ -140,9 +140,23 @@ async function saveClients() {
 }
 
 function sanitizeClientSchema(client) {
-    if (typeof client.loanAmount !== 'number') client.loanAmount = parseFloat(client.loanAmount) || 0;
-    if (typeof client.installmentAmount !== 'number') client.installmentAmount = parseFloat(client.installmentAmount) || 0;
+    if (typeof client.loanAmount !== 'number') client.loanAmount = parseCurrencyInput(client.loanAmount);
+    if (typeof client.installmentAmount !== 'number') client.installmentAmount = parseCurrencyInput(client.installmentAmount);
+    if (!client.salaryDay) client.salaryDay = client.paymentDay || 10;
     if (!Array.isArray(client.payments)) client.payments = [];
+}
+
+function parseCurrencyInput(val) {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (!val) return 0;
+    let str = val.toString().trim().replace(/\s/g, '').replace(/\$/g, '');
+    if (str.includes('.') && str.includes(',')) {
+        str = str.replace(/\./g, '').replace(',', '.');
+    } else if (str.includes(',')) {
+        str = str.replace(',', '.');
+    }
+    const parsed = parseFloat(str);
+    return isNaN(parsed) ? 0 : parsed;
 }
 
 function getDemoData() {
@@ -156,9 +170,10 @@ function getDemoData() {
             id: '1',
             name: 'Roberto Gómez',
             type: 'jubilado',
+            salaryDay: currentDay > 2 ? currentDay - 2 : 28,
             paymentDay: currentDay,
             loanAmount: 120000,
-            installmentAmount: 15000,
+            installmentAmount: 15000.50,
             phone: '3755-123456',
             email: 'roberto@email.com',
             notes: 'Jubilación ANSES',
@@ -167,19 +182,20 @@ function getDemoData() {
             daysOverdue: 0,
             lastPaymentDate: todayStr,
             payments: [
-                { id: 'p1', amount: 15000, date: todayStr, periodMonth: currentMonth, notes: 'Pago en término' }
+                { id: 'p1', amount: 15000.50, date: todayStr, periodMonth: currentMonth, notes: 'Pago en término' }
             ]
         },
         {
             id: '2',
             name: 'María Elena Sosa',
             type: 'jubilado',
+            salaryDay: 27,
             paymentDay: currentDay === 31 ? 1 : currentDay + 1, // Tomorrow
             loanAmount: 80000,
-            installmentAmount: 10000,
+            installmentAmount: 100444.44,
             phone: '3755-234567',
             email: '',
-            notes: '',
+            notes: 'Cobra sueldo el 27 de cada mes',
             paymentStatus: 'pending',
             isOverdue: false,
             daysOverdue: 0,
@@ -190,6 +206,7 @@ function getDemoData() {
             id: '3',
             name: 'Carlos Benítez',
             type: 'privado',
+            salaryDay: 10,
             paymentDay: currentDay > 7 ? currentDay - 7 : 1,
             loanAmount: 200000,
             installmentAmount: 25000,
@@ -206,9 +223,10 @@ function getDemoData() {
             id: '4',
             name: 'Ana Laura Fernández',
             type: 'privado',
+            salaryDay: 5,
             paymentDay: 20,
             loanAmount: 150000,
-            installmentAmount: 18000,
+            installmentAmount: 18450.75,
             phone: '3755-456789',
             email: 'ana@email.com',
             notes: '',
@@ -217,13 +235,14 @@ function getDemoData() {
             daysOverdue: 0,
             lastPaymentDate: todayStr,
             payments: [
-                { id: 'p2', amount: 18000, date: todayStr, periodMonth: currentMonth, notes: 'Transferencia bancaria' }
+                { id: 'p2', amount: 18450.75, date: todayStr, periodMonth: currentMonth, notes: 'Transferencia bancaria' }
             ]
         },
         {
             id: '5',
             name: 'Jorge Martínez',
             type: 'municipal',
+            salaryDay: 1,
             paymentDay: 5,
             loanAmount: 90000,
             installmentAmount: 11000,
@@ -240,9 +259,10 @@ function getDemoData() {
             id: '6',
             name: 'Silvia Ríos',
             type: 'provincial',
+            salaryDay: 30,
             paymentDay: currentDay > 3 ? currentDay - 3 : 1,
             loanAmount: 110000,
-            installmentAmount: 13500,
+            installmentAmount: 13500.25,
             phone: '3755-678901',
             email: 'silvia@gob.misiones.gov.ar',
             notes: 'Ministerio de Educación',
@@ -318,6 +338,7 @@ const els = {
     clientId: document.getElementById('clientId'),
     clientName: document.getElementById('clientName'),
     clientType: document.getElementById('clientType'),
+    salaryDay: document.getElementById('salaryDay'),
     paymentDay: document.getElementById('paymentDay'),
     loanAmount: document.getElementById('loanAmount'),
     installmentAmount: document.getElementById('installmentAmount'),
@@ -367,8 +388,8 @@ function formatDate(dateStr) {
 }
 
 function formatCurrency(amount) {
-    if (typeof amount !== 'number' || isNaN(amount)) return '$0';
-    return '$' + amount.toLocaleString('es-AR');
+    if (typeof amount !== 'number' || isNaN(amount)) return '$ 0,00';
+    return '$ ' + amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function getToday() {
@@ -575,6 +596,7 @@ function renderClientCard(client) {
     const currentDay = today.getDate();
     const isPayDay = currentDay === client.paymentDay;
     const isTomorrow = (currentDay === 31 ? 1 : currentDay + 1) === client.paymentDay;
+    const isSalaryDay = currentDay === client.salaryDay;
 
     let contactHtml = '';
     if (client.phone || client.email) {
@@ -604,10 +626,12 @@ function renderClientCard(client) {
     }
 
     let todayBadgeHtml = '';
-    if (isPayDay && client.paymentStatus !== 'paid') {
-        todayBadgeHtml = `<span class="badge badge-today"><i class="fas fa-exclamation-circle"></i> Cobra Hoy</span>`;
+    if (isSalaryDay) {
+        todayBadgeHtml = `<span class="badge badge-today"><i class="fas fa-wallet"></i> Cobra Sueldo Hoy (día ${client.salaryDay})</span>`;
+    } else if (isPayDay && client.paymentStatus !== 'paid') {
+        todayBadgeHtml = `<span class="badge badge-today"><i class="fas fa-exclamation-circle"></i> Vence Cuota Hoy</span>`;
     } else if (isTomorrow && client.paymentStatus !== 'paid') {
-        todayBadgeHtml = `<span class="badge badge-tomorrow"><i class="fas fa-bell"></i> Cobra Mañana</span>`;
+        todayBadgeHtml = `<span class="badge badge-tomorrow"><i class="fas fa-bell"></i> Vence Cuota Mañana</span>`;
     }
 
     const payBtnText = client.paymentStatus === 'paid' ? '<i class="fas fa-check"></i> Pagado' : 'Registrar pago';
@@ -623,8 +647,11 @@ function renderClientCard(client) {
                             <i class="fas ${typeConfig.icon}"></i> ${typeConfig.label}
                         </span>
                         ${todayBadgeHtml}
-                        <span class="payment-day">
-                            <i class="fas fa-calendar-day"></i> Cobro: día ${client.paymentDay}
+                        <span class="payment-day" title="Día de cobro de sueldo">
+                            <i class="fas fa-wallet"></i> Sueldo: día ${client.salaryDay || '-'}
+                        </span>
+                        <span class="payment-day" title="Día de vencimiento de cuota">
+                            <i class="fas fa-calendar-day"></i> Venc. Cuota: día ${client.paymentDay}
                         </span>
                     </div>
                 </div>
@@ -681,9 +708,10 @@ function editClient(id) {
     els.clientId.value = client.id;
     els.clientName.value = client.name;
     els.clientType.value = client.type;
+    els.salaryDay.value = client.salaryDay || 10;
     els.paymentDay.value = client.paymentDay;
-    els.loanAmount.value = client.loanAmount || '';
-    els.installmentAmount.value = client.installmentAmount || '';
+    els.loanAmount.value = client.loanAmount ? client.loanAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    els.installmentAmount.value = client.installmentAmount ? client.installmentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     els.clientPhone.value = client.phone || '';
     els.clientEmail.value = client.email || '';
     els.clientNotes.value = client.notes || '';
@@ -705,9 +733,10 @@ function handleSaveClient(e) {
     const clientData = {
         name: els.clientName.value.trim(),
         type: els.clientType.value,
+        salaryDay: parseInt(els.salaryDay.value) || 10,
         paymentDay: parseInt(els.paymentDay.value),
-        loanAmount: parseFloat(els.loanAmount.value) || 0,
-        installmentAmount: parseFloat(els.installmentAmount.value) || 0,
+        loanAmount: parseCurrencyInput(els.loanAmount.value),
+        installmentAmount: parseCurrencyInput(els.installmentAmount.value),
         phone: els.clientPhone.value.trim(),
         email: els.clientEmail.value.trim(),
         notes: els.clientNotes.value.trim()
@@ -766,11 +795,11 @@ function openPaymentModal(id) {
     els.paymentClientId.value = id;
     els.paymentClientPreview.innerHTML = `
         <div class="preview-name">${escapeHtml(client.name)}</div>
-        <div class="preview-type">${TYPE_CONFIG[client.type].label} - Cobro día ${client.paymentDay}</div>
+        <div class="preview-type">${TYPE_CONFIG[client.type].label} • Cobra Sueldo día ${client.salaryDay || '-'} • Vence Cuota día ${client.paymentDay}</div>
         ${client.installmentAmount > 0 ? `<div style="font-size:0.8125rem;color:var(--primary);font-weight:700;margin-top:2px;">Cuota mensual: ${formatCurrency(client.installmentAmount)}</div>` : ''}
     `;
 
-    els.paidAmount.value = client.installmentAmount || '';
+    els.paidAmount.value = client.installmentAmount ? client.installmentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     els.hasPaid.checked = client.paymentStatus === 'paid';
     els.isOverdue.checked = client.isOverdue;
     els.daysOverdue.value = client.daysOverdue || 1;
@@ -818,7 +847,7 @@ function handleSavePayment(e) {
     const isOverdue = els.isOverdue.checked;
     const daysOverdue = parseInt(els.daysOverdue.value) || 0;
     const paymentDate = els.paymentDate.value || getToday();
-    const paidAmountVal = parseFloat(els.paidAmount.value) || client.installmentAmount || 0;
+    const paidAmountVal = parseCurrencyInput(els.paidAmount.value) || client.installmentAmount || 0;
     const payNote = els.paymentNotes.value.trim();
 
     let status = 'pending';
