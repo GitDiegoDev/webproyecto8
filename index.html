@@ -159,18 +159,33 @@
                         <input type="text" id="clientName" required placeholder="Ej: Juan Pérez" autocomplete="name">
                     </div>
                     <div class="form-group flex-1">
-                        <label for="requestNumber">N° Solicitud</label>
-                        <input type="text" id="requestNumber" placeholder="Ej: 05" inputmode="numeric">
+                        <label for="branchNumber">N° Sucursal</label>
+                        <input type="text" id="branchNumber" placeholder="Ej: 01" inputmode="numeric" maxlength="2">
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group flex-1">
-                        <label for="installmentNumber">N° Cuota</label>
-                        <input type="text" id="installmentNumber" placeholder="Ej: 3 o 3/12">
+                        <label for="requestNumber">N° Solicitud</label>
+                        <input type="text" id="requestNumber" placeholder="Ej: 05" inputmode="numeric">
                     </div>
+                    <div class="form-group flex-1">
+                        <label for="installmentNumber">Cuota Actual</label>
+                        <input type="number" id="installmentNumber" min="1" placeholder="Ej: 3" inputmode="numeric">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="totalInstallments">Cuotas Totales</label>
+                        <input type="number" id="totalInstallments" min="1" placeholder="Ej: 12" inputmode="numeric">
+                    </div>
+                </div>
+                <div class="form-row">
                     <div class="form-group flex-1">
                         <label for="periodMonth">Mes del Período *</label>
                         <input type="month" id="periodMonth" required>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="penaltyRate">% Interés Punitorio Diario</label>
+                        <input type="number" id="penaltyRate" step="0.1" min="0" placeholder="Ej: 1.0" inputmode="decimal">
+                        <span class="input-hint">Mora por día atrasado</span>
                     </div>
                 </div>
                 <div class="form-row">
@@ -250,11 +265,26 @@
 
                 <div class="form-row">
                     <div class="form-group flex-1">
-                        <label for="paidAmount">Monto Pagado ($)</label>
-                        <input type="text" id="paidAmount" inputmode="decimal" placeholder="Ej: 100.444,44">
+                        <label for="paymentType">Tipo de Pago *</label>
+                        <select id="paymentType">
+                            <option value="total">Pago Total de Cuota</option>
+                            <option value="partial">Pago Parcial</option>
+                            <option value="advance">Adelanto de Cuota</option>
+                        </select>
                     </div>
                     <div class="form-group flex-1">
-                        <label for="paymentDate">Fecha de pago</label>
+                        <label for="paidAmount">Monto a Cobrar ($)</label>
+                        <input type="text" id="paidAmount" inputmode="decimal" placeholder="Ej: 100.444,44">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="amountGiven">Importe Entregado por Cliente ($)</label>
+                        <input type="text" id="amountGiven" inputmode="decimal" placeholder="Ej: 120.000,00">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="paymentDate">Fecha de Pago</label>
                         <input type="date" id="paymentDate">
                     </div>
                 </div>
@@ -268,6 +298,10 @@
                         <label for="paymentInstallmentNumber">N° Cuota</label>
                         <input type="text" id="paymentInstallmentNumber" placeholder="Ej: 3 o 3/12">
                     </div>
+                </div>
+
+                <div class="payment-calculation-box" id="paymentCalculationBox">
+                    <!-- Calculated dynamically (Punitorios, Vuelto / Saldo pendiente) -->
                 </div>
 
                 <div class="form-group">
