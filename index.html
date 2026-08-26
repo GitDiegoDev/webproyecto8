@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Palmares Efectivo en el Acto - Gestión de Clientes</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f4c3a">
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -42,9 +44,9 @@
         <div class="toolbar">
             <div class="search-box">
                 <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="Buscar cliente...">
+                <input type="text" id="searchInput" placeholder="Buscar cliente..." aria-label="Buscar cliente">
             </div>
-            <button class="btn-filter" id="filterBtn">
+            <button class="btn-filter" id="filterBtn" title="Filtros y opciones" aria-label="Abrir panel de filtros">
                 <i class="fas fa-filter"></i>
             </button>
             <button class="btn-primary" id="addClientBtn">
@@ -53,8 +55,20 @@
             </button>
         </div>
 
-        <!-- Filter Panel -->
+        <!-- Filter & Control Panel -->
         <div class="filter-panel" id="filterPanel">
+            <div class="filter-group">
+                <label for="sortBySelect">Ordenar Por</label>
+                <div class="select-wrapper">
+                    <select id="sortBySelect" class="form-control-sm">
+                        <option value="paymentDay-asc">Día de cobro (Menor a Mayor)</option>
+                        <option value="name-asc">Nombre (A-Z)</option>
+                        <option value="status-asc">Estado (Atrasados primero)</option>
+                        <option value="installment-desc">Monto Cuota (Mayor a Menor)</option>
+                    </select>
+                </div>
+            </div>
+
             <div class="filter-group">
                 <label>Tipo de Cliente</label>
                 <div class="filter-chips">
@@ -69,10 +83,27 @@
                 <label>Estado de Pago</label>
                 <div class="filter-chips">
                     <button class="chip active" data-status="all">Todos</button>
+                    <button class="chip" data-status="today">Cobra Hoy</button>
                     <button class="chip" data-status="paid">Pagado</button>
                     <button class="chip" data-status="pending">Pendiente</button>
                     <button class="chip" data-status="overdue">Atrasado</button>
                 </div>
+            </div>
+
+            <div class="filter-group data-management-group">
+                <label>Gestión de Datos & Copias</label>
+                <div class="action-buttons-row">
+                    <button type="button" class="btn-secondary btn-sm" id="exportDataBtn" title="Descargar copia de seguridad en JSON">
+                        <i class="fas fa-download"></i> Exportar JSON
+                    </button>
+                    <button type="button" class="btn-secondary btn-sm" id="importDataBtn" title="Restaurar copia de seguridad desde JSON">
+                        <i class="fas fa-upload"></i> Importar JSON
+                    </button>
+                    <button type="button" class="btn-secondary btn-sm btn-outline-danger" id="resetDemoBtn" title="Restablecer datos originales de demo">
+                        <i class="fas fa-undo"></i> Restablecer Demo
+                    </button>
+                </div>
+                <input type="file" id="importFileInput" accept=".json" style="display: none;">
             </div>
         </div>
 
@@ -80,6 +111,12 @@
         <main class="clients-container" id="clientsContainer">
             <!-- Groups will be rendered here -->
         </main>
+
+        <!-- Pagination / Load More Bar -->
+        <div class="pagination-bar" id="paginationBar" style="display: none;">
+            <span class="pagination-info" id="paginationInfo">Mostrando 0 de 0 clientes</span>
+            <button type="button" class="btn-secondary" id="loadMoreBtn">Ver más</button>
+        </div>
 
         <!-- Empty State -->
         <div class="empty-state" id="emptyState">
@@ -95,7 +132,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="modalTitle">Nuevo Cliente</h2>
-                <button class="btn-close" id="closeModal">
+                <button class="btn-close" id="closeModal" aria-label="Cerrar modal">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -103,7 +140,7 @@
                 <input type="hidden" id="clientId">
                 <div class="form-group">
                     <label for="clientName">Nombre completo *</label>
-                    <input type="text" id="clientName" required placeholder="Ej: Juan Pérez">
+                    <input type="text" id="clientName" required placeholder="Ej: Juan Pérez" autocomplete="name">
                 </div>
                 <div class="form-group">
                     <label for="clientType">Tipo de cliente *</label>
@@ -115,18 +152,28 @@
                         <option value="provincial">Provincial</option>
                     </select>
                 </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="paymentDay">Día de cobro *</label>
+                        <input type="number" id="paymentDay" min="1" max="31" inputmode="numeric" required placeholder="Ej: 15">
+                        <span class="input-hint">Día del mes</span>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="installmentAmount">Monto Cuota ($)</label>
+                        <input type="number" id="installmentAmount" min="0" step="100" inputmode="decimal" placeholder="Ej: 15000">
+                    </div>
+                </div>
                 <div class="form-group">
-                    <label for="paymentDay">Día de cobro *</label>
-                    <input type="number" id="paymentDay" min="1" max="31" required placeholder="Ej: 15">
-                    <span class="input-hint">Día del mes en que cobra</span>
+                    <label for="loanAmount">Monto Total Préstamo ($)</label>
+                    <input type="number" id="loanAmount" min="0" step="500" inputmode="decimal" placeholder="Ej: 100000">
                 </div>
                 <div class="form-group">
                     <label for="clientPhone">Teléfono</label>
-                    <input type="tel" id="clientPhone" placeholder="Ej: 3755-123456">
+                    <input type="tel" id="clientPhone" placeholder="Ej: 3755-123456" inputmode="tel" autocomplete="tel">
                 </div>
                 <div class="form-group">
                     <label for="clientEmail">Email</label>
-                    <input type="email" id="clientEmail" placeholder="Ej: cliente@email.com">
+                    <input type="email" id="clientEmail" placeholder="Ej: cliente@email.com" autocomplete="email">
                 </div>
                 <div class="form-group">
                     <label for="clientNotes">Notas</label>
@@ -143,47 +190,84 @@
     <!-- Payment Modal -->
     <div class="modal" id="paymentModal">
         <div class="modal-overlay"></div>
-        <div class="modal-content modal-small">
+        <div class="modal-content modal-medium">
             <div class="modal-header">
                 <h2>Registrar Pago</h2>
-                <button class="btn-close" id="closePaymentModal">
+                <button class="btn-close" id="closePaymentModal" aria-label="Cerrar modal">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <form id="paymentForm">
                 <input type="hidden" id="paymentClientId">
                 <div class="client-preview" id="paymentClientPreview"></div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="paidAmount">Monto Pagado ($)</label>
+                        <input type="number" id="paidAmount" min="0" step="500" inputmode="decimal" placeholder="Ej: 15000">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="paymentDate">Fecha de cobro</label>
+                        <input type="date" id="paymentDate">
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="hasPaid">
                         <span class="checkmark"></span>
-                        <span class="label-text">¿Pagó este mes?</span>
+                        <span class="label-text">¿Pagó el período actual?</span>
                     </label>
                 </div>
                 <div class="form-group" id="overdueGroup">
                     <label class="checkbox-label">
                         <input type="checkbox" id="isOverdue">
                         <span class="checkmark"></span>
-                        <span class="label-text">¿Está atrasado?</span>
+                        <span class="label-text">¿Marcar atraso manual?</span>
                     </label>
                 </div>
                 <div class="form-group" id="daysOverdueGroup" style="display:none;">
                     <label for="daysOverdue">Días de atraso</label>
-                    <input type="number" id="daysOverdue" min="1" value="1">
+                    <input type="number" id="daysOverdue" min="1" value="1" inputmode="numeric">
                 </div>
+
                 <div class="form-group">
-                    <label for="paymentDate">Fecha de registro</label>
-                    <input type="date" id="paymentDate">
+                    <label for="paymentNotes">Nota de pago (opcional)</label>
+                    <input type="text" id="paymentNotes" placeholder="Ej: Pago parcial, transferencia, etc.">
                 </div>
+
+                <!-- Payment History Container -->
+                <div class="payment-history-section">
+                    <h3><i class="fas fa-history"></i> Historial de Pagos</h3>
+                    <div id="paymentHistoryList" class="payment-history-list">
+                        <!-- Rendered via JS -->
+                    </div>
+                </div>
+
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" id="cancelPaymentBtn">Cancelar</button>
-                    <button type="submit" class="btn-primary">Guardar</button>
+                    <button type="submit" class="btn-primary">Guardar Pago</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Delete Confirmation -->
+    <!-- Unsaved Changes Confirmation Modal -->
+    <div class="modal" id="unsavedModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2>¿Descartar cambios?</h2>
+            </div>
+            <p class="modal-text">Tienes cambios no guardados. Si continúas, se perderán.</p>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="keepEditingBtn">Seguir editando</button>
+                <button type="button" class="btn-danger" id="discardChangesBtn">Descartar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
     <div class="modal" id="deleteModal">
         <div class="modal-overlay"></div>
         <div class="modal-content modal-small">
@@ -199,7 +283,7 @@
     </div>
 
     <!-- Toast Notifications -->
-    <div class="toast-container" id="toastContainer"></div>
+    <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
     <script src="app.js"></script>
 </body>
