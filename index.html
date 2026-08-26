@@ -74,6 +74,15 @@
             </div>
 
             <div class="filter-group">
+                <label for="monthFilterSelect">Filtrar por Mes</label>
+                <div class="select-wrapper">
+                    <select id="monthFilterSelect" class="form-control-sm">
+                        <option value="all">Todos los meses</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="filter-group">
                 <label>Tipo de Cliente</label>
                 <div class="filter-chips">
                     <button class="chip active" data-filter="all">Todos</button>
@@ -144,9 +153,25 @@
             </div>
             <form id="clientForm">
                 <input type="hidden" id="clientId">
-                <div class="form-group">
-                    <label for="clientName">Nombre completo *</label>
-                    <input type="text" id="clientName" required placeholder="Ej: Juan Pérez" autocomplete="name">
+                <div class="form-row">
+                    <div class="form-group flex-2">
+                        <label for="clientName">Nombre completo *</label>
+                        <input type="text" id="clientName" required placeholder="Ej: Juan Pérez" autocomplete="name">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="requestNumber">N° Solicitud</label>
+                        <input type="text" id="requestNumber" placeholder="Ej: 05" inputmode="numeric">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="installmentNumber">N° Cuota</label>
+                        <input type="text" id="installmentNumber" placeholder="Ej: 3 o 3/12">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="periodMonth">Mes del Período *</label>
+                        <input type="month" id="periodMonth" required>
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group flex-1">
@@ -231,6 +256,17 @@
                     <div class="form-group flex-1">
                         <label for="paymentDate">Fecha de pago</label>
                         <input type="date" id="paymentDate">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="paymentPeriodMonth">Mes a Abonar / Período</label>
+                        <input type="month" id="paymentPeriodMonth">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="paymentInstallmentNumber">N° Cuota</label>
+                        <input type="text" id="paymentInstallmentNumber" placeholder="Ej: 3 o 3/12">
                     </div>
                 </div>
 

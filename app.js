@@ -30,6 +30,7 @@ const STATUS_CONFIG = {
 let clients = [];
 let currentFilter = 'all';
 let currentStatusFilter = 'all';
+let currentMonthFilter = 'all';
 let currentSortBy = 'paymentDay-asc';
 let searchQuery = '';
 let editingId = null;
@@ -146,7 +147,30 @@ function sanitizeClientSchema(client) {
     if (typeof client.installmentAmount !== 'number') client.installmentAmount = parseCurrencyInput(client.installmentAmount);
     if (!client.salaryDay) client.salaryDay = client.paymentDay || 10;
     if (typeof client.dni !== 'string') client.dni = client.dni ? client.dni.toString().trim() : '';
+    if (!client.requestNumber) client.requestNumber = '';
+    if (!client.installmentNumber) client.installmentNumber = '';
+    if (!client.periodMonth) client.periodMonth = getToday().substring(0, 7);
     if (!Array.isArray(client.payments)) client.payments = [];
+}
+
+function formatMonthYear(yyyyMm) {
+    if (!yyyyMm || typeof yyyyMm !== 'string' || !yyyyMm.includes('-')) return yyyyMm || '';
+    const [year, month] = yyyyMm.split('-');
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const mIdx = parseInt(month, 10) - 1;
+    if (mIdx >= 0 && mIdx < 12) {
+        return `${months[mIdx]} ${year}`;
+    }
+    return yyyyMm;
+}
+
+function formatRequestNumber(numStr) {
+    if (!numStr) return '';
+    const trimmed = numStr.toString().trim();
+    if (/^\d{1}$/.test(trimmed)) {
+        return '0' + trimmed;
+    }
+    return trimmed;
 }
 
 function getDniTermination(dni) {
@@ -179,6 +203,9 @@ function getDemoData() {
         {
             id: '1',
             name: 'Roberto Gómez',
+            requestNumber: '01',
+            installmentNumber: '5/12',
+            periodMonth: currentMonth,
             dni: '14.234.567',
             type: 'jubilado',
             salaryDay: currentDay > 2 ? currentDay - 2 : 28,
@@ -193,12 +220,15 @@ function getDemoData() {
             daysOverdue: 0,
             lastPaymentDate: todayStr,
             payments: [
-                { id: 'p1', amount: 15000.50, date: todayStr, periodMonth: currentMonth, notes: 'Pago en término' }
+                { id: 'p1', amount: 15000.50, date: todayStr, periodMonth: currentMonth, installmentNumber: '5/12', notes: 'Pago en término' }
             ]
         },
         {
             id: '2',
             name: 'María Elena Sosa',
+            requestNumber: '02',
+            installmentNumber: '2/6',
+            periodMonth: currentMonth,
             dni: '18.456.789',
             type: 'jubilado',
             salaryDay: 27,
@@ -217,6 +247,9 @@ function getDemoData() {
         {
             id: '3',
             name: 'Patricia Morales',
+            requestNumber: '03',
+            installmentNumber: '1/12',
+            periodMonth: currentMonth,
             dni: '28.765.432',
             type: 'docente',
             salaryDay: 2,
@@ -235,6 +268,9 @@ function getDemoData() {
         {
             id: '4',
             name: 'Sgto. Ramón Fernández',
+            requestNumber: '04',
+            installmentNumber: '4/10',
+            periodMonth: currentMonth,
             dni: '25.345.678',
             type: 'policia',
             salaryDay: 3,
@@ -253,6 +289,9 @@ function getDemoData() {
         {
             id: '5',
             name: 'Carlos Benítez',
+            requestNumber: '05',
+            installmentNumber: '3/12',
+            periodMonth: currentMonth,
             dni: '23.456.789',
             type: 'privado',
             salaryDay: 10,
@@ -271,6 +310,9 @@ function getDemoData() {
         {
             id: '6',
             name: 'Ana Laura Fernández',
+            requestNumber: '06',
+            installmentNumber: '6/6',
+            periodMonth: currentMonth,
             dni: '31.987.654',
             type: 'privado',
             salaryDay: 5,
@@ -285,12 +327,15 @@ function getDemoData() {
             daysOverdue: 0,
             lastPaymentDate: todayStr,
             payments: [
-                { id: 'p2', amount: 18450.75, date: todayStr, periodMonth: currentMonth, notes: 'Transferencia bancaria' }
+                { id: 'p2', amount: 18450.75, date: todayStr, periodMonth: currentMonth, installmentNumber: '6/6', notes: 'Transferencia bancaria' }
             ]
         },
         {
             id: '7',
             name: 'Jorge Martínez',
+            requestNumber: '07',
+            installmentNumber: '2/12',
+            periodMonth: currentMonth,
             dni: '29.111.222',
             type: 'municipal',
             salaryDay: 1,
@@ -309,6 +354,9 @@ function getDemoData() {
         {
             id: '8',
             name: 'Silvia Ríos',
+            requestNumber: '08',
+            installmentNumber: '8/12',
+            periodMonth: currentMonth,
             dni: '26.333.444',
             type: 'provincial',
             salaryDay: 30,
@@ -372,6 +420,7 @@ const els = {
     filterBtn: document.getElementById('filterBtn'),
     filterPanel: document.getElementById('filterPanel'),
     sortBySelect: document.getElementById('sortBySelect'),
+    monthFilterSelect: document.getElementById('monthFilterSelect'),
     exportDataBtn: document.getElementById('exportDataBtn'),
     importDataBtn: document.getElementById('importDataBtn'),
     importFileInput: document.getElementById('importFileInput'),
@@ -389,6 +438,9 @@ const els = {
     clientForm: document.getElementById('clientForm'),
     clientId: document.getElementById('clientId'),
     clientName: document.getElementById('clientName'),
+    requestNumber: document.getElementById('requestNumber'),
+    installmentNumber: document.getElementById('installmentNumber'),
+    periodMonth: document.getElementById('periodMonth'),
     clientDni: document.getElementById('clientDni'),
     clientType: document.getElementById('clientType'),
     salaryDay: document.getElementById('salaryDay'),
@@ -406,11 +458,13 @@ const els = {
     paymentClientId: document.getElementById('paymentClientId'),
     paymentClientPreview: document.getElementById('paymentClientPreview'),
     paidAmount: document.getElementById('paidAmount'),
+    paymentDate: document.getElementById('paymentDate'),
+    paymentPeriodMonth: document.getElementById('paymentPeriodMonth'),
+    paymentInstallmentNumber: document.getElementById('paymentInstallmentNumber'),
     hasPaid: document.getElementById('hasPaid'),
     isOverdue: document.getElementById('isOverdue'),
     daysOverdue: document.getElementById('daysOverdue'),
     daysOverdueGroup: document.getElementById('daysOverdueGroup'),
-    paymentDate: document.getElementById('paymentDate'),
     paymentNotes: document.getElementById('paymentNotes'),
     paymentHistoryList: document.getElementById('paymentHistoryList'),
     cancelPaymentBtn: document.getElementById('cancelPaymentBtn'),
@@ -535,6 +589,34 @@ function resetDemoData() {
 // RENDER & FILTERING & SORTING
 // ========================================
 
+function updateMonthFilterOptions() {
+    if (!els.monthFilterSelect) return;
+    const monthsSet = new Set();
+    const currentMonthStr = getToday().substring(0, 7);
+    monthsSet.add(currentMonthStr);
+
+    clients.forEach(c => {
+        if (c.periodMonth) monthsSet.add(c.periodMonth);
+        if (c.payments && Array.isArray(c.payments)) {
+            c.payments.forEach(p => {
+                if (p.periodMonth) monthsSet.add(p.periodMonth);
+            });
+        }
+    });
+
+    const sortedMonths = Array.from(monthsSet).sort().reverse();
+
+    const selectedValue = currentMonthFilter;
+    let optionsHtml = `<option value="all"${selectedValue === 'all' ? ' selected' : ''}>Todos los meses</option>`;
+
+    sortedMonths.forEach(m => {
+        const label = formatMonthYear(m);
+        optionsHtml += `<option value="${m}"${selectedValue === m ? ' selected' : ''}>${label}</option>`;
+    });
+
+    els.monthFilterSelect.innerHTML = optionsHtml;
+}
+
 function updateStats() {
     els.totalClients.textContent = clients.length;
     els.pendingPayments.textContent = clients.filter(c => c.paymentStatus === 'pending').length;
@@ -544,7 +626,6 @@ function updateStats() {
 function getFilteredClients() {
     let filtered = [...clients];
     const todayDay = new Date().getDate();
-    const tomorrowDay = todayDay === 31 ? 1 : todayDay + 1;
 
     if (currentFilter !== 'all') {
         filtered = filtered.filter(c => c.type === currentFilter);
@@ -558,10 +639,16 @@ function getFilteredClients() {
         }
     }
 
+    if (currentMonthFilter !== 'all') {
+        filtered = filtered.filter(c => c.periodMonth === currentMonthFilter);
+    }
+
     if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         filtered = filtered.filter(c =>
             c.name.toLowerCase().includes(q) ||
+            (c.requestNumber && c.requestNumber.toLowerCase().includes(q)) ||
+            (c.installmentNumber && c.installmentNumber.toLowerCase().includes(q)) ||
             (c.dni && c.dni.toLowerCase().includes(q)) ||
             (c.phone && c.phone.includes(q)) ||
             (c.email && c.email.toLowerCase().includes(q)) ||
@@ -600,6 +687,7 @@ function groupClients(filtered) {
 }
 
 function renderClients() {
+    updateMonthFilterOptions();
     const filtered = getFilteredClients();
     updateStats();
 
@@ -703,6 +791,12 @@ function renderClientCard(client) {
         </span>`;
     }
 
+    const reqNumStr = formatRequestNumber(client.requestNumber);
+    let reqBadgeHtml = reqNumStr ? `<span class="badge badge-request" title="Número de solicitud"><i class="fas fa-file-invoice"></i> Sol. N° ${escapeHtml(reqNumStr)}</span>` : '';
+    let instBadgeHtml = client.installmentNumber ? `<span class="badge badge-installment" title="Número de cuota"><i class="fas fa-list-ol"></i> Cuota ${escapeHtml(client.installmentNumber)}</span>` : '';
+    let monthLabel = formatMonthYear(client.periodMonth);
+    let monthBadgeHtml = monthLabel ? `<span class="badge badge-period-month ${client.paymentStatus === 'overdue' ? 'overdue' : ''}" title="Mes del período"><i class="fas fa-calendar-alt"></i> Mes: ${escapeHtml(monthLabel)}</span>` : '';
+
     const payBtnText = client.paymentStatus === 'paid' ? '<i class="fas fa-check"></i> Pagado' : 'Registrar pago';
     const payBtnClass = client.paymentStatus === 'paid' ? 'paid' : '';
 
@@ -715,6 +809,9 @@ function renderClientCard(client) {
                         <span class="badge ${typeConfig.badgeClass}">
                             <i class="fas ${typeConfig.icon}"></i> ${typeConfig.label}
                         </span>
+                        ${reqBadgeHtml}
+                        ${instBadgeHtml}
+                        ${monthBadgeHtml}
                         ${dniHtml}
                         ${todayBadgeHtml}
                         <span class="payment-day" title="Día de cobro de sueldo">
@@ -764,6 +861,9 @@ function openAddModal() {
     els.modalTitle.textContent = 'Nuevo Cliente';
     els.clientForm.reset();
     els.clientId.value = '';
+    els.requestNumber.value = '';
+    els.installmentNumber.value = '';
+    els.periodMonth.value = getToday().substring(0, 7);
     els.clientDni.value = '';
     openModal(els.clientModal);
     els.clientName.focus();
@@ -778,6 +878,9 @@ function editClient(id) {
     els.modalTitle.textContent = 'Editar Cliente';
     els.clientId.value = client.id;
     els.clientName.value = client.name;
+    els.requestNumber.value = client.requestNumber || '';
+    els.installmentNumber.value = client.installmentNumber || '';
+    els.periodMonth.value = client.periodMonth || getToday().substring(0, 7);
     els.clientDni.value = client.dni || '';
     els.clientType.value = client.type;
     els.salaryDay.value = client.salaryDay || 10;
@@ -804,6 +907,9 @@ function handleSaveClient(e) {
 
     const clientData = {
         name: els.clientName.value.trim(),
+        requestNumber: formatRequestNumber(els.requestNumber.value),
+        installmentNumber: els.installmentNumber.value.trim(),
+        periodMonth: els.periodMonth.value || getToday().substring(0, 7),
         dni: els.clientDni.value.trim(),
         type: els.clientType.value,
         salaryDay: parseInt(els.salaryDay.value) || 10,
@@ -867,11 +973,12 @@ function openPaymentModal(id) {
 
     const dniTermination = getDniTermination(client.dni);
     const dniText = client.dni ? ` • DNI: ${escapeHtml(client.dni)}${dniTermination !== null ? ` (Term. ${dniTermination})` : ''}` : '';
+    const reqText = client.requestNumber ? ` • Sol. N° ${escapeHtml(client.requestNumber)}` : '';
 
     els.paymentClientId.value = id;
     els.paymentClientPreview.innerHTML = `
         <div class="preview-name">${escapeHtml(client.name)}</div>
-        <div class="preview-type">${TYPE_CONFIG[client.type].label}${dniText} • Cobra Sueldo día ${client.salaryDay || '-'} • Vence Cuota día ${client.paymentDay}</div>
+        <div class="preview-type">${TYPE_CONFIG[client.type].label}${reqText}${dniText} • Cobra Sueldo día ${client.salaryDay || '-'} • Vence Cuota día ${client.paymentDay}</div>
         ${client.installmentAmount > 0 ? `<div style="font-size:0.8125rem;color:var(--primary);font-weight:700;margin-top:2px;">Cuota mensual: ${formatCurrency(client.installmentAmount)}</div>` : ''}
     `;
 
@@ -880,6 +987,8 @@ function openPaymentModal(id) {
     els.isOverdue.checked = client.isOverdue;
     els.daysOverdue.value = client.daysOverdue || 1;
     els.paymentDate.value = client.lastPaymentDate || getToday();
+    els.paymentPeriodMonth.value = client.periodMonth || getToday().substring(0, 7);
+    els.paymentInstallmentNumber.value = client.installmentNumber || '';
     els.paymentNotes.value = '';
 
     renderPaymentHistory(client);
@@ -896,15 +1005,19 @@ function renderPaymentHistory(client) {
     // Sort descending by date
     const sorted = [...client.payments].sort((a, b) => b.date.localeCompare(a.date));
 
-    els.paymentHistoryList.innerHTML = sorted.map(p => `
-        <div class="history-item">
-            <div>
-                <span class="hist-date"><i class="fas fa-calendar"></i> ${formatDate(p.date)}</span>
-                ${p.notes ? `<div class="hist-note">${escapeHtml(p.notes)}</div>` : ''}
+    els.paymentHistoryList.innerHTML = sorted.map(p => {
+        const mLabel = formatMonthYear(p.periodMonth);
+        const instLabel = p.installmentNumber ? ` (Cuota ${escapeHtml(p.installmentNumber)})` : '';
+        return `
+            <div class="history-item">
+                <div>
+                    <span class="hist-date"><i class="fas fa-calendar"></i> ${formatDate(p.date)} - Período: ${escapeHtml(mLabel)}${instLabel}</span>
+                    ${p.notes ? `<div class="hist-note">${escapeHtml(p.notes)}</div>` : ''}
+                </div>
+                <span class="hist-amount">${formatCurrency(p.amount)}</span>
             </div>
-            <span class="hist-amount">${formatCurrency(p.amount)}</span>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function toggleOverdueFields() {
@@ -924,6 +1037,8 @@ function handleSavePayment(e) {
     const daysOverdue = parseInt(els.daysOverdue.value) || 0;
     const paymentDate = els.paymentDate.value || getToday();
     const paidAmountVal = parseCurrencyInput(els.paidAmount.value) || client.installmentAmount || 0;
+    const payPeriodMonth = els.paymentPeriodMonth.value || client.periodMonth || paymentDate.substring(0, 7);
+    const payInstallmentNumber = els.paymentInstallmentNumber.value.trim() || client.installmentNumber;
     const payNote = els.paymentNotes.value.trim();
 
     let status = 'pending';
@@ -937,16 +1052,19 @@ function handleSavePayment(e) {
     client.isOverdue = isOverdue;
     client.daysOverdue = isOverdue ? daysOverdue : 0;
 
+    if (payPeriodMonth) client.periodMonth = payPeriodMonth;
+    if (payInstallmentNumber) client.installmentNumber = payInstallmentNumber;
+
     if (hasPaid) {
         client.lastPaymentDate = paymentDate;
-        const periodMonth = paymentDate.substring(0, 7);
 
         // Record payment item into payments history
         const newPayment = {
             id: generateId(),
             amount: paidAmountVal,
             date: paymentDate,
-            periodMonth: periodMonth,
+            periodMonth: payPeriodMonth,
+            installmentNumber: payInstallmentNumber,
             notes: payNote || 'Pago mensual registrado'
         };
         if (!client.payments) client.payments = [];
@@ -991,6 +1109,14 @@ function setupFilters() {
         currentSortBy = e.target.value;
         renderClients();
     });
+
+    if (els.monthFilterSelect) {
+        els.monthFilterSelect.addEventListener('change', (e) => {
+            currentMonthFilter = e.target.value;
+            displayLimit = 20;
+            renderClients();
+        });
+    }
 }
 
 function setupEventListeners() {
@@ -1141,11 +1267,14 @@ function renderSummaryView() {
                     ${groupClientsList.map((client) => {
                         const status = STATUS_CONFIG[client.paymentStatus];
                         const dniText = client.dni ? ` (DNI: ${escapeHtml(client.dni)})` : '';
-                        const installmentText = client.installmentAmount > 0 ? ` - Cuota: ${formatCurrency(client.installmentAmount)}` : '';
+                        const reqText = client.requestNumber ? ` [Sol. N° ${escapeHtml(client.requestNumber)}]` : '';
+                        const instNumText = client.installmentNumber ? ` [Cuota ${escapeHtml(client.installmentNumber)}]` : '';
+                        const monthText = client.periodMonth ? ` [Mes: ${escapeHtml(formatMonthYear(client.periodMonth))}]` : '';
+                        const installmentText = client.installmentAmount > 0 ? ` - Monto: ${formatCurrency(client.installmentAmount)}` : '';
                         return `
                             <li class="summary-item">
                                 <div class="summary-item-content">
-                                    <span class="summary-item-name">${escapeHtml(client.name)}</span>${escapeHtml(dniText)}${escapeHtml(installmentText)}
+                                    <span class="summary-item-name">${escapeHtml(client.name)}</span>${escapeHtml(reqText)}${escapeHtml(instNumText)}${escapeHtml(monthText)}${escapeHtml(dniText)}${escapeHtml(installmentText)}
                                 </div>
                                 <span class="summary-status-badge status-${client.paymentStatus}">${status.label}</span>
                             </li>
@@ -1174,9 +1303,12 @@ function copySummaryToClipboard() {
         text += `${config.label}s (${list.length}):\n`;
         list.forEach((client, index) => {
             const dniText = client.dni ? ` - DNI: ${client.dni}` : '';
+            const reqText = client.requestNumber ? ` - Sol. N°: ${client.requestNumber}` : '';
+            const instNumText = client.installmentNumber ? ` - Cuota N°: ${client.installmentNumber}` : '';
+            const monthText = client.periodMonth ? ` - Mes: ${formatMonthYear(client.periodMonth)}` : '';
             const statusLabel = STATUS_CONFIG[client.paymentStatus] ? STATUS_CONFIG[client.paymentStatus].label : '';
-            const installmentText = client.installmentAmount > 0 ? ` - Cuota: ${formatCurrency(client.installmentAmount)}` : '';
-            text += `${index + 1}. ${client.name}${dniText}${installmentText} [${statusLabel}]\n`;
+            const installmentText = client.installmentAmount > 0 ? ` - Monto: ${formatCurrency(client.installmentAmount)}` : '';
+            text += `${index + 1}. ${client.name}${reqText}${instNumText}${monthText}${dniText}${installmentText} [${statusLabel}]\n`;
         });
         text += '\n';
     });

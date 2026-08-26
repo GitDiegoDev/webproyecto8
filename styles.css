@@ -534,6 +534,11 @@ body {
 .badge-municipal { background: #d1fae5; color: #059669; }
 .badge-provincial { background: #fef3c7; color: #d97706; }
 
+.badge-request { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-weight: 700; }
+.badge-installment { background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; font-weight: 700; }
+.badge-period-month { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; font-weight: 700; }
+.badge-period-month.overdue { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+
 .client-dni {
     display: inline-flex;
     align-items: center;
@@ -921,6 +926,10 @@ form {
 
 .flex-1 {
     flex: 1;
+}
+
+.flex-2 {
+    flex: 2;
 }
 
 .form-group label {
