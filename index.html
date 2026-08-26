@@ -49,6 +49,10 @@
             <button class="btn-filter" id="filterBtn" title="Filtros y opciones" aria-label="Abrir panel de filtros">
                 <i class="fas fa-filter"></i>
             </button>
+            <button class="btn-secondary" id="summaryBtn" title="Ver Resumen General de Clientes" aria-label="Ver Resumen General">
+                <i class="fas fa-list-ol"></i>
+                <span>Resumen</span>
+            </button>
             <button class="btn-primary" id="addClientBtn">
                 <i class="fas fa-plus"></i>
                 <span>Nuevo</span>
@@ -281,6 +285,28 @@
             <div class="form-actions">
                 <button type="button" class="btn-secondary" id="keepEditingBtn">Seguir editando</button>
                 <button type="button" class="btn-danger" id="discardChangesBtn">Descartar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Modal -->
+    <div class="modal" id="summaryModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-medium">
+            <div class="modal-header">
+                <h2><i class="fas fa-list-check"></i> Resumen General de Clientes</h2>
+                <button class="btn-close" id="closeSummaryModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="summary-body" id="summaryBody">
+                <!-- Grouped numbered list rendered via JS -->
+            </div>
+            <div class="modal-footer form-actions">
+                <button type="button" class="btn-secondary" id="copySummaryBtn">
+                    <i class="fas fa-copy"></i> Copiar Resumen
+                </button>
+                <button type="button" class="btn-primary" id="closeSummaryBtn">Cerrar</button>
             </div>
         </div>
     </div>
