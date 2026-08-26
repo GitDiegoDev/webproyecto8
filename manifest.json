@@ -4,11 +4,11 @@
   "description": "Dashboard de gestión de clientes y cuotas para Palmares Efectivo en el Acto",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#0f4c3a",
-  "theme_color": "#0f4c3a",
+  "background_color": "#0284c7",
+  "theme_color": "#0284c7",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%230f4c3a'/%3E%3Ccircle cx='256' cy='256' r='180' fill='%23e8b923'/%3E%3Ctext x='51%25' y='62%25' font-size='220' font-weight='bold' text-anchor='middle' fill='%230f4c3a' font-family='sans-serif'%3E$%3C/text%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%230284c7'/%3E%3Ccircle cx='256' cy='256' r='180' fill='%2300a8e8'/%3E%3Ctext x='51%25' y='62%25' font-size='220' font-weight='bold' text-anchor='middle' fill='%23ffffff' font-family='sans-serif'%3E$%3C/text%3E%3C/svg%3E",
       "sizes": "192x192 512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

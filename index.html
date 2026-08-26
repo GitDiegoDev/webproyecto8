@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Palmares Efectivo en el Acto - Gestión de Clientes</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0f4c3a">
+    <meta name="theme-color" content="#0284c7">
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -154,18 +154,25 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group flex-1">
-                        <label for="paymentDay">Día de cobro *</label>
-                        <input type="number" id="paymentDay" min="1" max="31" inputmode="numeric" required placeholder="Ej: 15">
-                        <span class="input-hint">Día del mes</span>
+                        <label for="salaryDay">Día cobro sueldo *</label>
+                        <input type="number" id="salaryDay" min="1" max="31" inputmode="numeric" required placeholder="Ej: 27">
+                        <span class="input-hint">Cobro de haberes</span>
                     </div>
                     <div class="form-group flex-1">
-                        <label for="installmentAmount">Monto Cuota ($)</label>
-                        <input type="number" id="installmentAmount" min="0" step="100" inputmode="decimal" placeholder="Ej: 15000">
+                        <label for="paymentDay">Vencimiento cuota *</label>
+                        <input type="number" id="paymentDay" min="1" max="31" inputmode="numeric" required placeholder="Ej: 1">
+                        <span class="input-hint">Día límite pago</span>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label for="loanAmount">Monto Total Préstamo ($)</label>
-                    <input type="number" id="loanAmount" min="0" step="500" inputmode="decimal" placeholder="Ej: 100000">
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="installmentAmount">Monto Cuota ($)</label>
+                        <input type="text" id="installmentAmount" inputmode="decimal" placeholder="Ej: 100.444,44">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="loanAmount">Monto Préstamo ($)</label>
+                        <input type="text" id="loanAmount" inputmode="decimal" placeholder="Ej: 500.000,00">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="clientPhone">Teléfono</label>
@@ -204,10 +211,10 @@
                 <div class="form-row">
                     <div class="form-group flex-1">
                         <label for="paidAmount">Monto Pagado ($)</label>
-                        <input type="number" id="paidAmount" min="0" step="500" inputmode="decimal" placeholder="Ej: 15000">
+                        <input type="text" id="paidAmount" inputmode="decimal" placeholder="Ej: 100.444,44">
                     </div>
                     <div class="form-group flex-1">
-                        <label for="paymentDate">Fecha de cobro</label>
+                        <label for="paymentDate">Fecha de pago</label>
                         <input type="date" id="paymentDate">
                     </div>
                 </div>

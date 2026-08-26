@@ -4,18 +4,18 @@
    ======================================== */
 
 :root {
-    --primary: #0f4c3a;
-    --primary-light: #1a7a5e;
-    --primary-dark: #0a3328;
-    --accent: #e8b923;
-    --accent-light: #f0d060;
+    --primary: #0284c7;
+    --primary-light: #38bdf8;
+    --primary-dark: #0369a1;
+    --accent: #00a8e8;
+    --accent-light: #e0f2fe;
     --danger: #dc3545;
     --danger-light: #f8d7da;
     --success: #198754;
     --success-light: #d1e7dd;
     --warning: #fd7e14;
     --warning-light: #fff3cd;
-    --bg: #f4f6f8;
+    --bg: #f0f7ff;
     --surface: #ffffff;
     --surface-elevated: #ffffff;
     --text-primary: #1a1a2e;
@@ -87,7 +87,7 @@ body {
 .logo {
     width: 48px;
     height: 48px;
-    background: var(--accent);
+    background: #ffffff;
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
@@ -95,7 +95,7 @@ body {
     font-size: 1.375rem;
     color: var(--primary-dark);
     flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(232, 185, 35, 0.3);
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
 }
 
 .brand-info h1 {
