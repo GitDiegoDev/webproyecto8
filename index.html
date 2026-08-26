@@ -40,6 +40,78 @@
             </div>
         </header>
 
+        <!-- Panel de Cobranza Diaria y Alertas de Promesas -->
+        <section class="daily-dashboard" id="dailyDashboard">
+            <div class="daily-dashboard-header">
+                <h2><i class="fas fa-chart-line"></i> COBRANZA DE HOY</h2>
+                <span class="dashboard-date" id="currentDashboardDate">--/--/----</span>
+            </div>
+            <div class="daily-grid">
+                <div class="daily-card highlight-today">
+                    <div class="daily-icon"><i class="fas fa-calendar-day"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">Cuotas a cobrar hoy</span>
+                        <div class="daily-val" id="dashTodayDueCount">0</div>
+                        <span class="daily-sub" id="dashTodayDueAmount">$ 0,00</span>
+                    </div>
+                </div>
+
+                <div class="daily-card alert-promises-today">
+                    <div class="daily-icon"><i class="fas fa-handshake"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">Promesas para hoy</span>
+                        <div class="daily-val" id="dashPromisesTodayCount">0</div>
+                        <span class="daily-sub" id="dashPromisesTodayAmount">$ 0,00</span>
+                    </div>
+                </div>
+
+                <div class="daily-card alert-promises-overdue">
+                    <div class="daily-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">Promesas vencidas</span>
+                        <div class="daily-val" id="dashPromisesOverdueCount">0</div>
+                        <span class="daily-sub">Requieren atención</span>
+                    </div>
+                </div>
+
+                <div class="daily-card alert-promises-pending">
+                    <div class="daily-icon"><i class="fas fa-clock"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">Promesas pendientes</span>
+                        <div class="daily-val" id="dashPromisesPendingCount">0</div>
+                        <span class="daily-sub">Futuras</span>
+                    </div>
+                </div>
+
+                <div class="daily-card alert-promises-fulfilled">
+                    <div class="daily-icon"><i class="fas fa-check-circle"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">Promesas cumplidas</span>
+                        <div class="daily-val" id="dashPromisesFulfilledCount">0</div>
+                        <span class="daily-sub" id="dashPromisesFulfilledAmount">$ 0,00</span>
+                    </div>
+                </div>
+
+                <div class="daily-card alert-promises-broken">
+                    <div class="daily-icon"><i class="fas fa-times-circle"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">Promesas incumplidas</span>
+                        <div class="daily-val" id="dashPromisesBrokenCount">0</div>
+                        <span class="daily-sub">Sin pago registrado</span>
+                    </div>
+                </div>
+
+                <div class="daily-card highlight-collected">
+                    <div class="daily-icon"><i class="fas fa-cash-register"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">Pagos registrados hoy</span>
+                        <div class="daily-val" id="dashPaymentsTodayCount">0</div>
+                        <span class="daily-sub" id="dashPaymentsTodayAmount">$ 0,00</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Search & Filter Bar -->
         <div class="toolbar">
             <div class="search-box">
@@ -48,6 +120,14 @@
             </div>
             <button class="btn-filter" id="filterBtn" title="Filtros y opciones" aria-label="Abrir panel de filtros">
                 <i class="fas fa-filter"></i>
+            </button>
+            <button class="btn-secondary" id="historyNavBtn" title="Ver Historial General de Pagos" aria-label="Ver Historial General de Pagos">
+                <i class="fas fa-receipt"></i>
+                <span>Pagos</span>
+            </button>
+            <button class="btn-secondary" id="exportNavBtn" title="Exportar Pagos para Sistema Oficial" aria-label="Exportar Pagos">
+                <i class="fas fa-file-export"></i>
+                <span>Exportar</span>
             </button>
             <button class="btn-secondary" id="summaryBtn" title="Ver Resumen General de Clientes" aria-label="Ver Resumen General">
                 <i class="fas fa-list-ol"></i>
@@ -249,19 +329,227 @@
         </div>
     </div>
 
-    <!-- Payment Modal -->
+    <!-- Modal Registrar Gestión -->
+    <div class="modal" id="gestionModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-medium">
+            <div class="modal-header">
+                <h2><i class="fas fa-headset"></i> Registrar Gestión de Cobranza</h2>
+                <button class="btn-close" id="closeGestionModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="gestionForm">
+                <input type="hidden" id="gestionClientId">
+                <div class="client-preview" id="gestionClientPreview"></div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="gestionDate">Fecha de gestión *</label>
+                        <input type="date" id="gestionDate" required>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="gestionTime">Hora *</label>
+                        <input type="time" id="gestionTime" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="gestionType">Tipo de gestión *</label>
+                        <select id="gestionType" required>
+                            <option value="WhatsApp / mensaje">WhatsApp / mensaje</option>
+                            <option value="Llamada telefónica">Llamada telefónica</option>
+                            <option value="Contacto presencial">Contacto presencial</option>
+                            <option value="Visita del cobrador">Visita del cobrador</option>
+                            <option value="Cliente vino a sucursal">Cliente vino a sucursal</option>
+                            <option value="Contacto con tercero">Contacto con tercero</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="gestionResult">Resultado *</label>
+                        <select id="gestionResult" required>
+                            <option value="Prometió pagar">Prometió pagar</option>
+                            <option value="Contactado">Contactado</option>
+                            <option value="Sin respuesta">Sin respuesta</option>
+                            <option value="Pago realizado">Pago realizado</option>
+                            <option value="Pago parcial">Pago parcial</option>
+                            <option value="No puede pagar">No puede pagar</option>
+                            <option value="Solicita reprogramación">Solicita reprogramación</option>
+                            <option value="Solicita refinanciación">Solicita refinanciación</option>
+                            <option value="Dato incorrecto / teléfono incorrecto">Dato incorrecto / teléfono incorrecto</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Promise Auto-trigger Box when "Prometió pagar" is selected -->
+                <div id="promiseAutoFields" class="promise-auto-box" style="display:none;">
+                    <h3><i class="fas fa-handshake"></i> Detalle de la Promesa de Pago</h3>
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="autoPromisedDate">Fecha prometida de pago *</label>
+                            <input type="date" id="autoPromisedDate">
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="autoPromisedAmount">Importe prometido ($) *</label>
+                            <input type="text" id="autoPromisedAmount" inputmode="decimal" placeholder="Ej: 150.000,00">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="autoPromiseMethod">Medio acordado</label>
+                            <select id="autoPromiseMethod">
+                                <option value="Sucursal">Sucursal</option>
+                                <option value="Cobrador">Cobrador</option>
+                                <option value="Transferencia">Transferencia</option>
+                                <option value="Otro">Otro</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="gestionObservations">Observaciones</label>
+                    <textarea id="gestionObservations" rows="2" placeholder="Detalle de la conversación o contacto..."></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="nextAction">Próxima acción / seguimiento</label>
+                        <input type="text" id="nextAction" placeholder="Ej: Enviar recordatorio por WhatsApp">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="nextFollowUpDate">Fecha próx. seguimiento</label>
+                        <input type="date" id="nextFollowUpDate">
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelGestionBtn">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar Gestión</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Registrar Promesa Directa -->
+    <div class="modal" id="promiseModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-medium">
+            <div class="modal-header">
+                <h2><i class="fas fa-handshake"></i> Registrar Promesa de Pago</h2>
+                <button class="btn-close" id="closePromiseModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="promiseForm">
+                <input type="hidden" id="promiseClientId">
+                <div class="client-preview" id="promiseClientPreview"></div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="promisePeriodMonth">Período / Mes</label>
+                        <input type="month" id="promisePeriodMonth" required>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="promiseInstallmentNumber">Cuota N°</label>
+                        <input type="text" id="promiseInstallmentNumber" placeholder="Ej: 3 de 12">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="promiseCreationDate">Fecha de acuerdo *</label>
+                        <input type="date" id="promiseCreationDate" required>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="promisedDate">Fecha prometida de pago *</label>
+                        <input type="date" id="promisedDate" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="promisedAmount">Importe prometido ($) *</label>
+                        <input type="text" id="promisedAmount" inputmode="decimal" required placeholder="Ej: 150.000,00">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="promisePaymentMethod">Medio acordado *</label>
+                        <select id="promisePaymentMethod" required>
+                            <option value="Sucursal">Sucursal</option>
+                            <option value="Cobrador">Cobrador</option>
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="promiseObservations">Observación</label>
+                    <textarea id="promiseObservations" rows="2" placeholder="Indicaciones del cliente para el día del cobro..."></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelPromiseBtn">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar Promesa</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Historial de Gestiones y Promesas del Cliente -->
+    <div class="modal" id="clientHistoryModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-medium">
+            <div class="modal-header">
+                <h2><i class="fas fa-folder-open"></i> Ficha e Historial del Cliente</h2>
+                <button class="btn-close" id="closeClientHistoryModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="client-history-body">
+                <div class="client-preview" id="clientHistoryPreview"></div>
+                <div class="tab-buttons">
+                    <button type="button" class="tab-btn active" data-tab="tab-gestiones"><i class="fas fa-headset"></i> Gestiones (<span id="countGestiones">0</span>)</button>
+                    <button type="button" class="tab-btn" data-tab="tab-promises"><i class="fas fa-handshake"></i> Promesas (<span id="countPromises">0</span>)</button>
+                    <button type="button" class="tab-btn" data-tab="tab-payments"><i class="fas fa-history"></i> Pagos (<span id="countPayments">0</span>)</button>
+                </div>
+                <div class="tab-content active" id="tab-gestiones">
+                    <div id="gestionesList" class="timeline-list"></div>
+                </div>
+                <div class="tab-content" id="tab-promises">
+                    <div id="promisesList" class="timeline-list"></div>
+                </div>
+                <div class="tab-content" id="tab-payments">
+                    <div id="clientPaymentsList" class="timeline-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer form-actions">
+                <button type="button" class="btn-secondary" id="closeClientHistoryBtn">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Modal (Enhanced) -->
     <div class="modal" id="paymentModal">
         <div class="modal-overlay"></div>
         <div class="modal-content modal-medium">
             <div class="modal-header">
-                <h2>Registrar Pago</h2>
+                <h2><i class="fas fa-cash-register"></i> Registrar Pago</h2>
                 <button class="btn-close" id="closePaymentModal" aria-label="Cerrar modal">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <form id="paymentForm">
                 <input type="hidden" id="paymentClientId">
+                <input type="hidden" id="paymentPromiseId">
                 <div class="client-preview" id="paymentClientPreview"></div>
+
+                <div id="promiseLinkedAlert" class="promise-linked-banner" style="display:none;">
+                    <!-- Auto linked promise notification -->
+                </div>
 
                 <div class="form-row">
                     <div class="form-group flex-1">
@@ -273,30 +561,66 @@
                         </select>
                     </div>
                     <div class="form-group flex-1">
-                        <label for="paidAmount">Monto a Cobrar ($)</label>
+                        <label for="paymentMethodSelect">Medio de Pago *</label>
+                        <select id="paymentMethodSelect" required>
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="Sucursal">Sucursal</option>
+                            <option value="Cobrador">Cobrador</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="paidAmount">Importe de Cuota ($)</label>
                         <input type="text" id="paidAmount" inputmode="decimal" placeholder="Ej: 100.444,44">
                     </div>
-                </div>
-
-                <div class="form-row">
                     <div class="form-group flex-1">
-                        <label for="amountGiven">Importe Entregado por Cliente ($)</label>
+                        <label for="amountGiven">Importe Entregado ($)</label>
                         <input type="text" id="amountGiven" inputmode="decimal" placeholder="Ej: 120.000,00">
                     </div>
+                </div>
+
+                <div class="form-row">
                     <div class="form-group flex-1">
-                        <label for="paymentDate">Fecha de Pago</label>
-                        <input type="date" id="paymentDate">
+                        <label for="punitoriosGenerated">Punitorios Calculados ($)</label>
+                        <input type="text" id="punitoriosGenerated" inputmode="decimal" placeholder="0.00" readonly>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="punitoriosWaived">Punitorios Condonados ($)</label>
+                        <input type="text" id="punitoriosWaived" inputmode="decimal" placeholder="Ej: 0,00">
+                        <span class="input-hint">Bonificación / Condonación parcial o total</span>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group flex-1">
-                        <label for="paymentPeriodMonth">Mes a Abonar / Período</label>
-                        <input type="month" id="paymentPeriodMonth">
+                        <label for="paymentDate">Fecha de Pago *</label>
+                        <input type="date" id="paymentDate" required>
                     </div>
                     <div class="form-group flex-1">
-                        <label for="paymentInstallmentNumber">N° Cuota</label>
-                        <input type="text" id="paymentInstallmentNumber" placeholder="Ej: 3 o 3/12">
+                        <label for="paymentTime">Hora de Pago *</label>
+                        <input type="time" id="paymentTime" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="paymentPeriodMonth">Mes a Abonar / Período *</label>
+                        <input type="month" id="paymentPeriodMonth" required>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="paymentInstallmentNumber">N° Cuota *</label>
+                        <input type="text" id="paymentInstallmentNumber" placeholder="Ej: 3 o 3/12" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="paymentUser">Usuario / Registrado por</label>
+                        <input type="text" id="paymentUser" value="Cobrador" placeholder="Nombre de usuario">
                     </div>
                 </div>
 
@@ -324,13 +648,13 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="paymentNotes">Nota de pago (opcional)</label>
-                    <input type="text" id="paymentNotes" placeholder="Ej: Pago parcial, transferencia, etc.">
+                    <label for="paymentNotes">Observaciones del Pago</label>
+                    <input type="text" id="paymentNotes" placeholder="Ej: Pago parcial, transferencia realizada por familiar, etc.">
                 </div>
 
                 <!-- Payment History Container -->
                 <div class="payment-history-section">
-                    <h3><i class="fas fa-history"></i> Historial de Pagos</h3>
+                    <h3><i class="fas fa-history"></i> Historial de Pagos del Cliente</h3>
                     <div id="paymentHistoryList" class="payment-history-list">
                         <!-- Rendered via JS -->
                     </div>
@@ -339,6 +663,167 @@
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" id="cancelPaymentBtn">Cancelar</button>
                     <button type="submit" class="btn-primary">Guardar Pago</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Comprobante de Pago Imprimible -->
+    <div class="modal" id="receiptModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-medium printable-modal-content">
+            <div class="modal-header no-print">
+                <h2><i class="fas fa-file-invoice"></i> Comprobante de Pago</h2>
+                <button class="btn-close" id="closeReceiptModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div id="receiptContainer" class="receipt-paper">
+                <!-- Receipt Html dynamically injected -->
+            </div>
+
+            <div class="modal-footer form-actions no-print">
+                <button type="button" class="btn-primary" id="printReceiptBtn">
+                    <i class="fas fa-print"></i> Imprimir Comprobante
+                </button>
+                <button type="button" class="btn-secondary" id="closeReceiptBtn">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Historial Permanente de Pagos -->
+    <div class="modal" id="historyModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2><i class="fas fa-receipt"></i> Historial Permanente de Pagos</h2>
+                <button class="btn-close" id="closeHistoryModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="history-filter-bar">
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <input type="text" id="histFilterClient" placeholder="Buscar por Cliente o DNI...">
+                    </div>
+                    <div class="form-group flex-1">
+                        <select id="histFilterPeriod">
+                            <option value="all">Todos los Períodos</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label>Desde</label>
+                        <input type="date" id="histFilterFrom">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label>Hasta</label>
+                        <input type="date" id="histFilterTo">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label>Medio Pago</label>
+                        <select id="histFilterMethod">
+                            <option value="all">Todos</option>
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="Sucursal">Sucursal</option>
+                            <option value="Cobrador">Cobrador</option>
+                        </select>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label>Estado Exportación</label>
+                        <select id="histFilterExportStatus">
+                            <option value="all">Todos</option>
+                            <option value="pending">Pendiente de exportación</option>
+                            <option value="exported">Exportado</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="history-table-container">
+                <table class="history-table" id="historyTable">
+                    <thead>
+                        <tr>
+                            <th>Comprobante</th>
+                            <th>Fecha/Hora</th>
+                            <th>Cliente / DNI</th>
+                            <th>Período/Cuota</th>
+                            <th>Importe Cobrado</th>
+                            <th>Medio</th>
+                            <th>Estado Sup.</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <!-- Dynamic content -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="modal-footer form-actions">
+                <button type="button" class="btn-secondary" id="closeHistoryBtn">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Exportar Pagos para Sistema Oficial -->
+    <div class="modal" id="exportModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-medium">
+            <div class="modal-header">
+                <h2><i class="fas fa-file-export"></i> Exportar Pagos para Sistema Oficial</h2>
+                <button class="btn-close" id="closeExportModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="exportPaymentsForm">
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="expDateFrom">Fecha Desde</label>
+                        <input type="date" id="expDateFrom">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="expDateTo">Fecha Hasta</label>
+                        <input type="date" id="expDateTo">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="expPeriodMonth">Período / Mes</label>
+                        <select id="expPeriodMonth">
+                            <option value="all">Todos los Períodos</option>
+                        </select>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="expExportScope">Seleccionar Pagos</label>
+                        <select id="expExportScope">
+                            <option value="pending">Solo Pendientes de Exportación</option>
+                            <option value="all">Todos los Pagos</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="expFormat">Formato de Exportación</label>
+                    <select id="expFormat">
+                        <option value="csv">Archivo CSV (Excel / Sistema Oficial)</option>
+                        <option value="json">Archivo JSON (Estructurado)</option>
+                    </select>
+                </div>
+
+                <div class="export-summary-box" id="exportSummaryBox">
+                    <span class="exp-count">Pagos seleccionados: <strong id="expMatchCount">0</strong></span>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelExportBtn">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="startExportBtn">
+                        <i class="fas fa-download"></i> Descargar y Marcar como Exportados
+                    </button>
                 </div>
             </form>
         </div>

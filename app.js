@@ -142,6 +142,33 @@ async function saveClients() {
     }
 }
 
+function getCurrentTime() {
+    const d = new Date();
+    const hrs = String(d.getHours()).padStart(2, '0');
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    return `${hrs}:${mins}`;
+}
+
+function generateReceiptNumber() {
+    let maxNum = 100;
+    if (Array.isArray(clients)) {
+        clients.forEach(c => {
+            if (Array.isArray(c.payments)) {
+                c.payments.forEach(p => {
+                    if (p.receiptNumber) {
+                        const num = parseInt(p.receiptNumber.replace(/\D/g, ''), 10);
+                        if (!isNaN(num) && num > maxNum) {
+                            maxNum = num;
+                        }
+                    }
+                });
+            }
+        });
+    }
+    const nextNum = maxNum + 1;
+    return String(nextNum).padStart(8, '0');
+}
+
 function sanitizeClientSchema(client) {
     if (typeof client.loanAmount !== 'number') client.loanAmount = parseCurrencyInput(client.loanAmount);
     if (typeof client.installmentAmount !== 'number') client.installmentAmount = parseCurrencyInput(client.installmentAmount);
@@ -153,7 +180,69 @@ function sanitizeClientSchema(client) {
     if (!client.totalInstallments) client.totalInstallments = 12;
     if (client.penaltyRate === undefined || client.penaltyRate === null) client.penaltyRate = 1.0; // 1% per day default
     if (!client.periodMonth) client.periodMonth = getToday().substring(0, 7);
+
+    if (!Array.isArray(client.gestiones)) client.gestiones = [];
+    if (!Array.isArray(client.promises)) client.promises = [];
     if (!Array.isArray(client.payments)) client.payments = [];
+
+    // Sanitize payments
+    client.payments.forEach((p) => {
+        if (!p.id) p.id = generateId();
+        if (!p.receiptNumber) {
+            p.receiptNumber = generateReceiptNumber();
+        }
+        if (typeof p.amount !== 'number') p.amount = parseCurrencyInput(p.amount);
+        if (typeof p.installmentAmount !== 'number') p.installmentAmount = p.amount || client.installmentAmount || 0;
+        if (typeof p.amountGiven !== 'number') p.amountGiven = p.amount || 0;
+        if (typeof p.punitorios !== 'number') p.punitorios = 0;
+        if (typeof p.punitoriosWaived !== 'number') p.punitoriosWaived = 0;
+        if (typeof p.totalTheoretical !== 'number') {
+            p.totalTheoretical = (p.installmentAmount || 0) + (p.punitorios || 0) - (p.punitoriosWaived || 0);
+        }
+        if (!p.paymentType) p.paymentType = 'total';
+        if (!p.paymentMethod) p.paymentMethod = 'Efectivo';
+        if (!p.date) p.date = getToday();
+        if (!p.time) p.time = '12:00';
+        if (!p.periodMonth) p.periodMonth = client.periodMonth || getToday().substring(0, 7);
+        if (!p.installmentNumber) p.installmentNumber = `${client.installmentNumber || 1}`;
+        if (typeof p.daysOverdue !== 'number') p.daysOverdue = 0;
+        if (!p.notes) p.notes = '';
+        if (!p.user) p.user = 'Cobrador';
+        if (typeof p.exported !== 'boolean') p.exported = false;
+        if (p.exportedAt === undefined) p.exportedAt = null;
+        if (p.promiseId === undefined) p.promiseId = null;
+        if (p.gestionId === undefined) p.gestionId = null;
+    });
+
+    // Sanitize gestiones
+    client.gestiones.forEach(g => {
+        if (!g.id) g.id = generateId();
+        if (!g.date) g.date = getToday();
+        if (!g.time) g.time = getCurrentTime();
+        if (!g.type) g.type = 'Llamada telefónica';
+        if (!g.result) g.result = 'Contactado';
+        if (!g.observations) g.observations = '';
+        if (!g.nextAction) g.nextAction = '';
+        if (g.nextFollowUpDate === undefined) g.nextFollowUpDate = '';
+        if (g.promiseId === undefined) g.promiseId = null;
+        if (!g.createdAt) g.createdAt = new Date().toISOString();
+    });
+
+    // Sanitize promises
+    client.promises.forEach(pr => {
+        if (!pr.id) pr.id = generateId();
+        if (!pr.periodMonth) pr.periodMonth = client.periodMonth || getToday().substring(0, 7);
+        if (!pr.installmentNumber) pr.installmentNumber = `${client.installmentNumber || 1}`;
+        if (!pr.creationDate) pr.creationDate = getToday();
+        if (!pr.promisedDate) pr.promisedDate = getToday();
+        if (typeof pr.promisedAmount !== 'number') pr.promisedAmount = parseCurrencyInput(pr.promisedAmount);
+        if (!pr.paymentMethod) pr.paymentMethod = 'Sucursal';
+        if (!pr.observations) pr.observations = '';
+        if (!pr.status) pr.status = 'pendiente';
+        if (pr.gestionId === undefined) pr.gestionId = null;
+        if (pr.paymentId === undefined) pr.paymentId = null;
+        if (!pr.createdAt) pr.createdAt = new Date().toISOString();
+    });
 }
 
 function formatTwoDigitNumber(numStr) {
@@ -445,6 +534,97 @@ function updateOverdueStatuses() {
             client.daysOverdue = 0;
         }
     });
+
+    updatePromisesStatuses();
+}
+
+function updatePromisesStatuses() {
+    const todayStr = getToday();
+    clients.forEach(client => {
+        if (!Array.isArray(client.promises)) return;
+        client.promises.forEach(pr => {
+            if (pr.status === 'pendiente' && pr.promisedDate < todayStr) {
+                pr.status = 'vencida';
+            }
+        });
+    });
+}
+
+function updateDailyDashboard() {
+    const todayStr = getToday();
+    const todayDay = new Date().getDate();
+
+    const currentDashboardDateEl = document.getElementById('currentDashboardDate');
+    if (currentDashboardDateEl) {
+        currentDashboardDateEl.textContent = formatDate(todayStr);
+    }
+
+    let todayDueCount = 0;
+    let todayDueAmount = 0;
+    let promisesTodayCount = 0;
+    let promisesTodayAmount = 0;
+    let promisesOverdueCount = 0;
+    let promisesPendingCount = 0;
+    let promisesFulfilledCount = 0;
+    let promisesFulfilledAmount = 0;
+    let promisesBrokenCount = 0;
+    let paymentsTodayCount = 0;
+    let paymentsTodayAmount = 0;
+
+    clients.forEach(client => {
+        // Due today
+        if (client.paymentDay === todayDay && client.paymentStatus !== 'paid') {
+            todayDueCount++;
+            todayDueAmount += (client.installmentAmount || 0);
+        }
+
+        // Promises
+        if (Array.isArray(client.promises)) {
+            client.promises.forEach(pr => {
+                if (pr.promisedDate === todayStr && pr.status === 'pendiente') {
+                    promisesTodayCount++;
+                    promisesTodayAmount += (pr.promisedAmount || 0);
+                }
+                if (pr.status === 'vencida' || pr.status === 'incumplida' || (pr.promisedDate < todayStr && pr.status === 'pendiente')) {
+                    promisesOverdueCount++;
+                    promisesBrokenCount++;
+                } else if (pr.status === 'pendiente' && pr.promisedDate > todayStr) {
+                    promisesPendingCount++;
+                } else if (pr.status === 'cumplida') {
+                    promisesFulfilledCount++;
+                    promisesFulfilledAmount += (pr.promisedAmount || 0);
+                }
+            });
+        }
+
+        // Payments today
+        if (Array.isArray(client.payments)) {
+            client.payments.forEach(p => {
+                if (p.date === todayStr) {
+                    paymentsTodayCount++;
+                    paymentsTodayAmount += (p.amount || 0);
+                }
+            });
+        }
+    });
+
+    // Update DOM
+    const setTxt = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+
+    setTxt('dashTodayDueCount', todayDueCount);
+    setTxt('dashTodayDueAmount', formatCurrency(todayDueAmount));
+    setTxt('dashPromisesTodayCount', promisesTodayCount);
+    setTxt('dashPromisesTodayAmount', formatCurrency(promisesTodayAmount));
+    setTxt('dashPromisesOverdueCount', promisesOverdueCount);
+    setTxt('dashPromisesPendingCount', promisesPendingCount);
+    setTxt('dashPromisesFulfilledCount', promisesFulfilledCount);
+    setTxt('dashPromisesFulfilledAmount', formatCurrency(promisesFulfilledAmount));
+    setTxt('dashPromisesBrokenCount', promisesBrokenCount);
+    setTxt('dashPaymentsTodayCount', paymentsTodayCount);
+    setTxt('dashPaymentsTodayAmount', formatCurrency(paymentsTodayAmount));
 }
 
 // ========================================
@@ -736,6 +916,7 @@ function renderClients() {
     updateMonthFilterOptions();
     const filtered = getFilteredClients();
     updateStats();
+    updateDailyDashboard();
 
     if (filtered.length === 0) {
         els.clientsContainer.innerHTML = '';
@@ -856,6 +1037,25 @@ function renderClientCard(client) {
     const payBtnText = client.paymentStatus === 'paid' ? '<i class="fas fa-check"></i> Pagado' : 'Registrar pago';
     const payBtnClass = client.paymentStatus === 'paid' ? 'paid' : '';
 
+    // Active promise badge if exists
+    let activePromiseHtml = '';
+    if (Array.isArray(client.promises) && client.promises.length > 0) {
+        const sortedPromises = [...client.promises].sort((a, b) => b.promisedDate.localeCompare(a.promisedDate));
+        const activePr = sortedPromises.find(p => p.status === 'pendiente' || p.status === 'vencida') || sortedPromises[0];
+        if (activePr) {
+            const todayStr = getToday();
+            let pClass = activePr.status;
+            let pLabel = activePr.status.toUpperCase();
+            if (activePr.promisedDate === todayStr && activePr.status === 'pendiente') {
+                pClass = 'hoy';
+                pLabel = 'PROMESA HOY';
+            }
+            activePromiseHtml = `<div class="promise-badge-card ${pClass}" title="Promesa de pago">
+                <i class="fas fa-handshake"></i> Promesa: ${formatDate(activePr.promisedDate)} - ${formatCurrency(activePr.promisedAmount)} [${pLabel}]
+            </div>`;
+        }
+    }
+
     return `
         <div class="client-card ${client.paymentStatus}">
             <div class="card-header">
@@ -894,6 +1094,7 @@ function renderClientCard(client) {
             ${amountsHtml}
             ${contactHtml}
             ${notesHtml}
+            ${activePromiseHtml}
             <div class="payment-status">
                 <div class="status-indicator">
                     <span class="status-dot ${statusConfig.dotClass}"></span>
@@ -904,8 +1105,665 @@ function renderClientCard(client) {
                     ${payBtnText}
                 </button>
             </div>
+            <div class="card-quick-actions">
+                <button type="button" class="btn-card-action btn-action-gestion" onclick="openGestionModal('${client.id}')">
+                    <i class="fas fa-headset"></i> Registrar gestión
+                </button>
+                <button type="button" class="btn-card-action btn-action-promise" onclick="openPromiseModal('${client.id}')">
+                    <i class="fas fa-handshake"></i> Registrar promesa
+                </button>
+                <button type="button" class="btn-card-action btn-action-history" onclick="openClientHistoryModal('${client.id}')">
+                    <i class="fas fa-folder-open"></i> Ver historial (${(client.gestiones||[]).length + (client.promises||[]).length})
+                </button>
+            </div>
         </div>
     `;
+}
+
+// ========================================
+// GESTIONES DIARIAS & HISTORIAL
+// ========================================
+
+function openGestionModal(id) {
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+
+    const gestionClientId = document.getElementById('gestionClientId');
+    const gestionClientPreview = document.getElementById('gestionClientPreview');
+    const gestionDate = document.getElementById('gestionDate');
+    const gestionTime = document.getElementById('gestionTime');
+    const gestionType = document.getElementById('gestionType');
+    const gestionResult = document.getElementById('gestionResult');
+    const gestionObservations = document.getElementById('gestionObservations');
+    const nextAction = document.getElementById('nextAction');
+    const nextFollowUpDate = document.getElementById('nextFollowUpDate');
+    const promiseAutoFields = document.getElementById('promiseAutoFields');
+    const autoPromisedDate = document.getElementById('autoPromisedDate');
+    const autoPromisedAmount = document.getElementById('autoPromisedAmount');
+    const autoPromiseMethod = document.getElementById('autoPromiseMethod');
+
+    if (gestionClientId) gestionClientId.value = id;
+    if (gestionClientPreview) {
+        const dniText = client.dni ? ` • DNI: ${escapeHtml(client.dni)}` : '';
+        gestionClientPreview.innerHTML = `
+            <div class="preview-name">${escapeHtml(client.name)}</div>
+            <div class="preview-type">${TYPE_CONFIG[client.type].label}${dniText} • Cuota: ${client.installmentNumber || 1}/${client.totalInstallments || 12} • Valor: ${formatCurrency(client.installmentAmount)}</div>
+        `;
+    }
+
+    if (gestionDate) gestionDate.value = getToday();
+    if (gestionTime) gestionTime.value = getCurrentTime();
+    if (gestionType) gestionType.value = 'WhatsApp / mensaje';
+    if (gestionResult) gestionResult.value = 'Prometió pagar';
+    if (gestionObservations) gestionObservations.value = '';
+    if (nextAction) nextAction.value = '';
+    if (nextFollowUpDate) nextFollowUpDate.value = '';
+
+    if (autoPromisedDate) autoPromisedDate.value = getToday();
+    if (autoPromisedAmount) autoPromisedAmount.value = client.installmentAmount ? client.installmentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    if (autoPromiseMethod) autoPromiseMethod.value = 'Sucursal';
+
+    if (promiseAutoFields) {
+        promiseAutoFields.style.display = (gestionResult.value === 'Prometió pagar') ? 'block' : 'none';
+    }
+
+    openModal(document.getElementById('gestionModal'));
+}
+
+function handleSaveGestion(e) {
+    e.preventDefault();
+
+    const id = document.getElementById('gestionClientId').value;
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+
+    const gDate = document.getElementById('gestionDate').value || getToday();
+    const gTime = document.getElementById('gestionTime').value || getCurrentTime();
+    const gType = document.getElementById('gestionType').value;
+    const gResult = document.getElementById('gestionResult').value;
+    const gObs = document.getElementById('gestionObservations').value.trim();
+    const nextAct = document.getElementById('nextAction').value.trim();
+    const nextDate = document.getElementById('nextFollowUpDate').value;
+
+    const newGestion = {
+        id: generateId(),
+        date: gDate,
+        time: gTime,
+        type: gType,
+        result: gResult,
+        observations: gObs,
+        nextAction: nextAct,
+        nextFollowUpDate: nextDate,
+        promiseId: null,
+        createdAt: new Date().toISOString()
+    };
+
+    if (gResult === 'Prometió pagar') {
+        const pDate = document.getElementById('autoPromisedDate').value || gDate;
+        const pAmount = parseCurrencyInput(document.getElementById('autoPromisedAmount').value) || client.installmentAmount || 0;
+        const pMethod = document.getElementById('autoPromiseMethod').value || 'Sucursal';
+
+        const newPromise = {
+            id: generateId(),
+            periodMonth: client.periodMonth || getToday().substring(0, 7),
+            installmentNumber: `${client.installmentNumber || 1}`,
+            creationDate: gDate,
+            promisedDate: pDate,
+            promisedAmount: pAmount,
+            paymentMethod: pMethod,
+            observations: gObs ? `Generada por gestión (${gType}): ${gObs}` : `Generada por gestión (${gType})`,
+            status: (pDate < getToday()) ? 'vencida' : 'pendiente',
+            gestionId: newGestion.id,
+            paymentId: null,
+            createdAt: new Date().toISOString()
+        };
+
+        if (!client.promises) client.promises = [];
+        client.promises.push(newPromise);
+        newGestion.promiseId = newPromise.id;
+    }
+
+    if (!client.gestiones) client.gestiones = [];
+    client.gestiones.push(newGestion);
+
+    updateOverdueStatuses();
+    saveClients();
+    renderClients();
+
+    showToast('Gestión de cobranza registrada', 'success');
+    closeModalFn(document.getElementById('gestionModal'));
+}
+
+function openClientHistoryModal(id) {
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+
+    const preview = document.getElementById('clientHistoryPreview');
+    if (preview) {
+        const dniText = client.dni ? ` • DNI: ${escapeHtml(client.dni)}` : '';
+        preview.innerHTML = `
+            <div class="preview-name">${escapeHtml(client.name)}</div>
+            <div class="preview-type">${TYPE_CONFIG[client.type].label}${dniText} • Cuota actual: ${client.installmentNumber || 1}/${client.totalInstallments || 12} • Valor: ${formatCurrency(client.installmentAmount)}</div>
+        `;
+    }
+
+    renderClientHistoryTimeline(client);
+
+    // Setup tab buttons
+    document.querySelectorAll('#clientHistoryModal .tab-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('#clientHistoryModal .tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('#clientHistoryModal .tab-content').forEach(tc => tc.classList.remove('active'));
+            btn.classList.add('active');
+            const target = btn.dataset.tab;
+            const targetEl = document.getElementById(target);
+            if (targetEl) targetEl.classList.add('active');
+        };
+    });
+
+    openModal(document.getElementById('clientHistoryModal'));
+}
+
+function renderClientHistoryTimeline(client) {
+    const gestionesList = document.getElementById('gestionesList');
+    const promisesList = document.getElementById('promisesList');
+    const clientPaymentsList = document.getElementById('clientPaymentsList');
+
+    const countGestiones = document.getElementById('countGestiones');
+    const countPromises = document.getElementById('countPromises');
+    const countPayments = document.getElementById('countPayments');
+
+    const gestiones = Array.isArray(client.gestiones) ? [...client.gestiones].sort((a,b) => (b.date + b.time).localeCompare(a.date + a.time)) : [];
+    const promises = Array.isArray(client.promises) ? [...client.promises].sort((a,b) => (b.promisedDate + b.createdAt).localeCompare(a.promisedDate + a.createdAt)) : [];
+    const payments = Array.isArray(client.payments) ? [...client.payments].sort((a,b) => (b.date + b.time).localeCompare(a.date + a.time)) : [];
+
+    if (countGestiones) countGestiones.textContent = gestiones.length;
+    if (countPromises) countPromises.textContent = promises.length;
+    if (countPayments) countPayments.textContent = payments.length;
+
+    // 1. Gestiones
+    if (gestionesList) {
+        if (gestiones.length === 0) {
+            gestionesList.innerHTML = `<div class="no-history">No hay gestiones registradas para este cliente.</div>`;
+        } else {
+            gestionesList.innerHTML = gestiones.map(g => `
+                <div class="timeline-item gestion">
+                    <div class="timeline-header">
+                        <span><i class="fas fa-calendar"></i> ${formatDate(g.date)} — ${escapeHtml(g.time)}</span>
+                        <span class="timeline-badge" style="background:#e0f2fe;color:#0369a1;"><i class="fas fa-headset"></i> ${escapeHtml(g.type)}</span>
+                    </div>
+                    <div class="timeline-title">Resultado: ${escapeHtml(g.result)}</div>
+                    ${g.observations ? `<div class="timeline-body">"${escapeHtml(g.observations)}"</div>` : ''}
+                    ${g.nextAction ? `<div class="timeline-body" style="color:var(--primary-dark);font-weight:600;margin-top:4px;"><i class="fas fa-arrow-right"></i> Próxima acción: ${escapeHtml(g.nextAction)}${g.nextFollowUpDate ? ` (${formatDate(g.nextFollowUpDate)})` : ''}</div>` : ''}
+                </div>
+            `).join('');
+        }
+    }
+
+    // 2. Promises
+    if (promisesList) {
+        if (promises.length === 0) {
+            promisesList.innerHTML = `<div class="no-history">No hay promesas de pago registradas.</div>`;
+        } else {
+            promisesList.innerHTML = promises.map(pr => {
+                let badgeBg = '#fff3cd';
+                let badgeColor = '#856404';
+                if (pr.status === 'cumplida') { badgeBg = '#d1e7dd'; badgeColor = '#0f5132'; }
+                else if (pr.status === 'vencida' || pr.status === 'incumplida') { badgeBg = '#f8d7da'; badgeColor = '#721c24'; }
+
+                return `
+                    <div class="timeline-item promise ${pr.status}">
+                        <div class="timeline-header">
+                            <span>Acordada: ${formatDate(pr.creationDate)} — Período: ${escapeHtml(formatMonthYear(pr.periodMonth))}</span>
+                            <span class="timeline-badge" style="background:${badgeBg};color:${badgeColor};">${pr.status.toUpperCase()}</span>
+                        </div>
+                        <div class="timeline-title"><i class="fas fa-handshake"></i> Fecha Prometida: ${formatDate(pr.promisedDate)} — Importe: ${formatCurrency(pr.promisedAmount)}</div>
+                        <div class="timeline-body">Medio de pago acordado: <strong>${escapeHtml(pr.paymentMethod)}</strong></div>
+                        ${pr.observations ? `<div class="timeline-body">"${escapeHtml(pr.observations)}"</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    // 3. Payments
+    if (clientPaymentsList) {
+        if (payments.length === 0) {
+            clientPaymentsList.innerHTML = `<div class="no-history">No hay pagos registrados para este cliente.</div>`;
+        } else {
+            clientPaymentsList.innerHTML = payments.map(p => `
+                <div class="timeline-item payment">
+                    <div class="timeline-header">
+                        <span><i class="fas fa-calendar"></i> ${formatDate(p.date)} ${p.time ? p.time : ''} — N° Comp: <strong>${escapeHtml(p.receiptNumber)}</strong></span>
+                        <span class="timeline-badge" style="background:#d1e7dd;color:#0f5132;"><i class="fas fa-check-circle"></i> PAGADO</span>
+                    </div>
+                    <div class="timeline-title">${formatCurrency(p.amount)} — Período: ${escapeHtml(formatMonthYear(p.periodMonth))} (Cuota ${escapeHtml(p.installmentNumber)})</div>
+                    <div class="timeline-body">Medio de pago: <strong>${escapeHtml(p.paymentMethod)}</strong> ${p.punitorios > 0 ? ` | Punitorios: ${formatCurrency(p.punitorios)}` : ''}</div>
+                    ${p.notes ? `<div class="timeline-body">Obs: "${escapeHtml(p.notes)}"</div>` : ''}
+                    <div style="margin-top:6px;">
+                        <button type="button" class="btn-card-action btn-sm" onclick="showReceiptModal('${client.id}', '${p.id}')">
+                            <i class="fas fa-file-invoice"></i> Ver comprobante
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+}
+
+// ========================================
+// PROMESAS DE PAGO
+// ========================================
+
+function openPromiseModal(id) {
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+
+    const promiseClientId = document.getElementById('promiseClientId');
+    const promiseClientPreview = document.getElementById('promiseClientPreview');
+    const promisePeriodMonth = document.getElementById('promisePeriodMonth');
+    const promiseInstallmentNumber = document.getElementById('promiseInstallmentNumber');
+    const promiseCreationDate = document.getElementById('promiseCreationDate');
+    const promisedDate = document.getElementById('promisedDate');
+    const promisedAmount = document.getElementById('promisedAmount');
+    const promisePaymentMethod = document.getElementById('promisePaymentMethod');
+    const promiseObservations = document.getElementById('promiseObservations');
+
+    if (promiseClientId) promiseClientId.value = id;
+    if (promiseClientPreview) {
+        const dniText = client.dni ? ` • DNI: ${escapeHtml(client.dni)}` : '';
+        promiseClientPreview.innerHTML = `
+            <div class="preview-name">${escapeHtml(client.name)}</div>
+            <div class="preview-type">${TYPE_CONFIG[client.type].label}${dniText} • Cuota: ${client.installmentNumber || 1}/${client.totalInstallments || 12} • Valor: ${formatCurrency(client.installmentAmount)}</div>
+        `;
+    }
+
+    if (promisePeriodMonth) promisePeriodMonth.value = client.periodMonth || getToday().substring(0, 7);
+    if (promiseInstallmentNumber) promiseInstallmentNumber.value = `${client.installmentNumber || 1} de ${client.totalInstallments || 12}`;
+    if (promiseCreationDate) promiseCreationDate.value = getToday();
+    if (promisedDate) promisedDate.value = getToday();
+    if (promisedAmount) promisedAmount.value = client.installmentAmount ? client.installmentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    if (promisePaymentMethod) promisePaymentMethod.value = 'Sucursal';
+    if (promiseObservations) promiseObservations.value = '';
+
+    openModal(document.getElementById('promiseModal'));
+}
+
+function handleSavePromise(e) {
+    e.preventDefault();
+
+    const id = document.getElementById('promiseClientId').value;
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+
+    const periodMonth = document.getElementById('promisePeriodMonth').value || client.periodMonth || getToday().substring(0, 7);
+    const instNum = document.getElementById('promiseInstallmentNumber').value.trim() || `${client.installmentNumber || 1}`;
+    const creationDate = document.getElementById('promiseCreationDate').value || getToday();
+    const pDate = document.getElementById('promisedDate').value || getToday();
+    const pAmount = parseCurrencyInput(document.getElementById('promisedAmount').value) || client.installmentAmount || 0;
+    const pMethod = document.getElementById('promisePaymentMethod').value || 'Sucursal';
+    const obs = document.getElementById('promiseObservations').value.trim();
+
+    const newPromise = {
+        id: generateId(),
+        periodMonth: periodMonth,
+        installmentNumber: instNum,
+        creationDate: creationDate,
+        promisedDate: pDate,
+        promisedAmount: pAmount,
+        paymentMethod: pMethod,
+        observations: obs,
+        status: (pDate < getToday()) ? 'vencida' : 'pendiente',
+        gestionId: null,
+        paymentId: null,
+        createdAt: new Date().toISOString()
+    };
+
+    if (!client.promises) client.promises = [];
+    client.promises.push(newPromise);
+
+    updateOverdueStatuses();
+    saveClients();
+    renderClients();
+
+    showToast('Promesa de pago registrada', 'success');
+    closeModalFn(document.getElementById('promiseModal'));
+}
+
+// ========================================
+// COMPROBANTE DE PAGO IMPRIMIBLE
+// ========================================
+
+function showReceiptModal(clientId, paymentId) {
+    let targetPayment = null;
+    let targetClient = null;
+
+    if (clientId) {
+        targetClient = clients.find(c => c.id === clientId);
+        if (targetClient && Array.isArray(targetClient.payments)) {
+            targetPayment = targetClient.payments.find(p => p.id === paymentId);
+        }
+    }
+
+    if (!targetPayment) {
+        for (const c of clients) {
+            if (Array.isArray(c.payments)) {
+                const found = c.payments.find(p => p.id === paymentId);
+                if (found) {
+                    targetPayment = found;
+                    targetClient = c;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!targetPayment || !targetClient) {
+        showToast('Comprobante no encontrado', 'error');
+        return;
+    }
+
+    const receiptContainer = document.getElementById('receiptContainer');
+    if (!receiptContainer) return;
+
+    const baseCuota = targetPayment.installmentAmount || targetClient.installmentAmount || targetPayment.amount;
+    const punitoriosGen = targetPayment.punitorios || 0;
+    const punitoriosWaived = targetPayment.punitoriosWaived || 0;
+    const totalCobrado = targetPayment.amount;
+
+    receiptContainer.innerHTML = `
+        <div class="receipt-header-box">
+            <h1>Palmares</h1>
+            <div class="sub-brand">Efectivo en el Acto</div>
+            <div class="receipt-title">COMPROBANTE DE PAGO</div>
+            <div class="receipt-number-badge">COMPROBANTE N.° ${escapeHtml(targetPayment.receiptNumber || '00000001')}</div>
+        </div>
+
+        <div class="receipt-section-title"><i class="fas fa-user"></i> Datos del Cliente</div>
+        <div class="receipt-row"><span>Nombre Completo:</span> <strong>${escapeHtml(targetClient.name)}</strong></div>
+        ${targetClient.dni ? `<div class="receipt-row"><span>DNI / Documento:</span> <strong>${escapeHtml(targetClient.dni)}</strong></div>` : ''}
+        ${targetClient.branchNumber ? `<div class="receipt-row"><span>Sucursal N°:</span> <strong>${escapeHtml(targetClient.branchNumber)}</strong></div>` : ''}
+        ${targetClient.requestNumber ? `<div class="receipt-row"><span>Solicitud / Operación N°:</span> <strong>${escapeHtml(targetClient.requestNumber)}</strong></div>` : ''}
+
+        <div class="receipt-section-title"><i class="fas fa-file-invoice-dollar"></i> Detalle del Pago</div>
+        <div class="receipt-row"><span>Fecha y Hora de Pago:</span> <strong>${formatDate(targetPayment.date)} — ${escapeHtml(targetPayment.time || '12:00')} hs</strong></div>
+        <div class="receipt-row"><span>Período / Mes:</span> <strong>${escapeHtml(formatMonthYear(targetPayment.periodMonth))}</strong></div>
+        <div class="receipt-row"><span>Número de Cuota:</span> <strong>Cuota ${escapeHtml(targetPayment.installmentNumber)}</strong></div>
+        <div class="receipt-row"><span>Medio de Pago:</span> <strong>${escapeHtml(targetPayment.paymentMethod || 'Efectivo')}</strong></div>
+        <div class="receipt-row"><span>Importe de Cuota:</span> <strong>${formatCurrency(baseCuota)}</strong></div>
+
+        ${punitoriosGen > 0 ? `<div class="receipt-row"><span>Punitorios por Mora:</span> <strong>+ ${formatCurrency(punitoriosGen)}</strong></div>` : ''}
+        ${punitoriosWaived > 0 ? `<div class="receipt-row" style="color:#198754;"><span>Bonificación / Condonación Punitorios:</span> <strong>- ${formatCurrency(punitoriosWaived)}</strong></div>` : ''}
+
+        <div class="receipt-row total-row">
+            <span>TOTAL COBRADO:</span>
+            <span>${formatCurrency(totalCobrado)}</span>
+        </div>
+
+        ${targetPayment.notes ? `<div class="receipt-section-title"><i class="fas fa-sticky-note"></i> Observaciones</div><div class="receipt-row"><span>${escapeHtml(targetPayment.notes)}</span></div>` : ''}
+
+        <div class="receipt-footer-notes">
+            <p>Gracias por su pago — Palmares Efectivo en el Acto</p>
+            <p style="font-size:0.7rem;margin-top:2px;opacity:0.8;">Atendido por: ${escapeHtml(targetPayment.user || 'Cobrador')} | Registrado el ${formatDate(targetPayment.date)}</p>
+        </div>
+    `;
+
+    openModal(document.getElementById('receiptModal'));
+}
+
+// ========================================
+// HISTORIAL PERMANENTE DE PAGOS & EXPORTACIÓN
+// ========================================
+
+function openHistoryModal() {
+    // Populate period filter select
+    const histFilterPeriod = document.getElementById('histFilterPeriod');
+    if (histFilterPeriod) {
+        const periods = new Set();
+        clients.forEach(c => {
+            if (Array.isArray(c.payments)) {
+                c.payments.forEach(p => {
+                    if (p.periodMonth) periods.add(p.periodMonth);
+                });
+            }
+        });
+        const sorted = Array.from(periods).sort().reverse();
+        histFilterPeriod.innerHTML = `<option value="all">Todos los Períodos</option>` +
+            sorted.map(m => `<option value="${m}">${formatMonthYear(m)}</option>`).join('');
+    }
+
+    renderHistoryTable();
+    openModal(document.getElementById('historyModal'));
+}
+
+function renderHistoryTable() {
+    const tableBody = document.getElementById('historyTableBody');
+    if (!tableBody) return;
+
+    const qClient = (document.getElementById('histFilterClient')?.value || '').toLowerCase().trim();
+    const period = document.getElementById('histFilterPeriod')?.value || 'all';
+    const fromDate = document.getElementById('histFilterFrom')?.value || '';
+    const toDate = document.getElementById('histFilterTo')?.value || '';
+    const method = document.getElementById('histFilterMethod')?.value || 'all';
+    const exportStatus = document.getElementById('histFilterExportStatus')?.value || 'all';
+
+    let allPayments = [];
+    clients.forEach(c => {
+        if (Array.isArray(c.payments)) {
+            c.payments.forEach(p => {
+                allPayments.push({
+                    payment: p,
+                    client: c
+                });
+            });
+        }
+    });
+
+    // Apply filters
+    let filtered = allPayments.filter(({ payment, client }) => {
+        if (qClient) {
+            const matchesName = client.name.toLowerCase().includes(qClient);
+            const matchesDni = (client.dni || '').toLowerCase().includes(qClient);
+            if (!matchesName && !matchesDni) return false;
+        }
+        if (period !== 'all' && payment.periodMonth !== period) return false;
+        if (fromDate && payment.date < fromDate) return false;
+        if (toDate && payment.date > toDate) return false;
+        if (method !== 'all' && payment.paymentMethod !== method) return false;
+        if (exportStatus === 'pending' && payment.exported) return false;
+        if (exportStatus === 'exported' && !payment.exported) return false;
+
+        return true;
+    });
+
+    // Sort newest to oldest
+    filtered.sort((a, b) => (b.payment.date + (b.payment.time || '')).localeCompare(a.payment.date + (a.payment.time || '')));
+
+    if (filtered.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No se encontraron pagos registrados con los filtros seleccionados.</td></tr>`;
+        return;
+    }
+
+    tableBody.innerHTML = filtered.map(({ payment, client }) => {
+        const expBadge = payment.exported ?
+            `<span class="timeline-badge" style="background:#d1e7dd;color:#0f5132;"><i class="fas fa-check"></i> Exportado</span>` :
+            `<span class="timeline-badge" style="background:#fff3cd;color:#856404;"><i class="fas fa-clock"></i> Pendiente</span>`;
+
+        return `
+            <tr>
+                <td><strong>N.° ${escapeHtml(payment.receiptNumber || '00000000')}</strong></td>
+                <td>${formatDate(payment.date)} ${escapeHtml(payment.time || '')}</td>
+                <td><strong>${escapeHtml(client.name)}</strong>${client.dni ? `<br><small style="color:var(--text-muted);">DNI: ${escapeHtml(client.dni)}</small>` : ''}</td>
+                <td>${formatMonthYear(payment.periodMonth)} (Cuota ${escapeHtml(payment.installmentNumber)})</td>
+                <td><strong style="color:var(--success);">${formatCurrency(payment.amount)}</strong></td>
+                <td><span class="badge" style="background:#f1f5f9;color:#334155;">${escapeHtml(payment.paymentMethod || 'Efectivo')}</span></td>
+                <td>${expBadge}</td>
+                <td>
+                    <button type="button" class="btn-card-action btn-sm" onclick="showReceiptModal('${client.id}', '${payment.id}')" title="Ver / Imprimir Comprobante">
+                        <i class="fas fa-file-invoice"></i> Comprobante
+                    </button>
+                    <button type="button" class="btn-card-action btn-sm" onclick="openClientHistoryModal('${client.id}')" title="Ver ficha e historial">
+                        <i class="fas fa-folder-open"></i> Ficha
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function openExportModal() {
+    const expPeriodMonth = document.getElementById('expPeriodMonth');
+    if (expPeriodMonth) {
+        const periods = new Set();
+        clients.forEach(c => {
+            if (Array.isArray(c.payments)) {
+                c.payments.forEach(p => {
+                    if (p.periodMonth) periods.add(p.periodMonth);
+                });
+            }
+        });
+        const sorted = Array.from(periods).sort().reverse();
+        expPeriodMonth.innerHTML = `<option value="all">Todos los Períodos</option>` +
+            sorted.map(m => `<option value="${m}">${formatMonthYear(m)}</option>`).join('');
+    }
+
+    const expDateFrom = document.getElementById('expDateFrom');
+    const expDateTo = document.getElementById('expDateTo');
+    if (expDateFrom) expDateFrom.value = '';
+    if (expDateTo) expDateTo.value = '';
+
+    updateExportMatchCount();
+    openModal(document.getElementById('exportModal'));
+}
+
+function getExportFilteredPayments() {
+    const fromDate = document.getElementById('expDateFrom')?.value || '';
+    const toDate = document.getElementById('expDateTo')?.value || '';
+    const period = document.getElementById('expPeriodMonth')?.value || 'all';
+    const scope = document.getElementById('expExportScope')?.value || 'pending';
+
+    let matches = [];
+    clients.forEach(c => {
+        if (Array.isArray(c.payments)) {
+            c.payments.forEach(p => {
+                if (fromDate && p.date < fromDate) return;
+                if (toDate && p.date > toDate) return;
+                if (period !== 'all' && p.periodMonth !== period) return;
+                if (scope === 'pending' && p.exported) return;
+
+                matches.push({ payment: p, client: c });
+            });
+        }
+    });
+
+    return matches;
+}
+
+function updateExportMatchCount() {
+    const matches = getExportFilteredPayments();
+    const matchCountEl = document.getElementById('expMatchCount');
+    if (matchCountEl) matchCountEl.textContent = matches.length;
+}
+
+function handleStartExport(e) {
+    e.preventDefault();
+
+    const matches = getExportFilteredPayments();
+    if (matches.length === 0) {
+        showToast('No hay pagos que coincidan con los filtros seleccionados para exportar', 'error');
+        return;
+    }
+
+    const format = document.getElementById('expFormat')?.value || 'csv';
+
+    if (format === 'json') {
+        const exportDataList = matches.map(({ payment, client }) => ({
+            id_pago: payment.id,
+            id_comprobante: payment.receiptNumber,
+            fecha: payment.date,
+            hora: payment.time || '12:00',
+            cliente_id: client.id,
+            cliente_nombre: client.name,
+            dni: client.dni || '',
+            numero_sucursal: client.branchNumber || '',
+            numero_solicitud: client.requestNumber || '',
+            periodo: payment.periodMonth,
+            numero_cuota: payment.installmentNumber,
+            importe_cuota: payment.installmentAmount || payment.amount,
+            punitorios_generados: payment.punitorios || 0,
+            punitorios_condonados: payment.punitoriosWaived || 0,
+            importe_cobrado: payment.amount,
+            importe_entregado: payment.amountGiven || 0,
+            medio_pago: payment.paymentMethod || 'Efectivo',
+            dias_atraso: payment.daysOverdue || 0,
+            observaciones: payment.notes || '',
+            usuario_registro: payment.user || 'Cobrador'
+        }));
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportDataList, null, 2));
+        const anchor = document.createElement('a');
+        anchor.setAttribute("href", dataStr);
+        anchor.setAttribute("download", `export_pagos_palmares_${getToday()}.json`);
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+
+    } else {
+        // CSV Format
+        const headers = [
+            "ID Pago", "N° Comprobante", "Fecha", "Hora", "Cliente", "DNI",
+            "N° Sucursal", "N° Solicitud", "Período", "N° Cuota", "Importe Cuota",
+            "Punitorios", "Punitorios Condonados", "Importe Cobrado", "Medio de Pago",
+            "Días Atraso", "Observaciones", "Usuario"
+        ];
+
+        let csvRows = [headers.join(';')];
+
+        matches.forEach(({ payment, client }) => {
+            const row = [
+                `"${payment.id}"`,
+                `"${payment.receiptNumber || ''}"`,
+                `"${payment.date}"`,
+                `"${payment.time || '12:00'}"`,
+                `"${(client.name || '').replace(/"/g, '""')}"`,
+                `"${client.dni || ''}"`,
+                `"${client.branchNumber || ''}"`,
+                `"${client.requestNumber || ''}"`,
+                `"${payment.periodMonth || ''}"`,
+                `"${payment.installmentNumber || ''}"`,
+                payment.installmentAmount || payment.amount || 0,
+                payment.punitorios || 0,
+                payment.punitoriosWaived || 0,
+                payment.amount || 0,
+                `"${payment.paymentMethod || 'Efectivo'}"`,
+                payment.daysOverdue || 0,
+                `"${(payment.notes || '').replace(/"/g, '""')}"`,
+                `"${payment.user || 'Cobrador'}"`
+            ];
+            csvRows.push(row.join(';'));
+        });
+
+        const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + encodeURIComponent(csvRows.join('\n'));
+        const anchor = document.createElement('a');
+        anchor.setAttribute("href", csvContent);
+        anchor.setAttribute("download", `export_pagos_palmares_${getToday()}.csv`);
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+    }
+
+    // Mark exported status
+    const exportTime = new Date().toISOString();
+    matches.forEach(({ payment }) => {
+        payment.exported = true;
+        payment.exportedAt = exportTime;
+    });
+
+    saveClients();
+    renderClients();
+
+    showToast(`${matches.length} pagos exportados correctamente y marcados como EXPORTADOS`, 'success');
+    closeModalFn(document.getElementById('exportModal'));
 }
 
 // ========================================
@@ -1050,13 +1908,48 @@ function openPaymentModal(id) {
         ${client.installmentAmount > 0 ? `<div style="font-size:0.8125rem;color:var(--primary);font-weight:700;margin-top:2px;">Valor Cuota: ${formatCurrency(client.installmentAmount)}</div>` : ''}
     `;
 
+    // Check for active promise to auto-link
+    const paymentPromiseId = document.getElementById('paymentPromiseId');
+    const promiseLinkedAlert = document.getElementById('promiseLinkedAlert');
+    let foundPromise = null;
+
+    if (Array.isArray(client.promises)) {
+        foundPromise = client.promises.find(p => p.status === 'pendiente' || p.status === 'vencida');
+    }
+
+    if (foundPromise) {
+        if (paymentPromiseId) paymentPromiseId.value = foundPromise.id;
+        if (promiseLinkedAlert) {
+            promiseLinkedAlert.style.display = 'block';
+            promiseLinkedAlert.innerHTML = `<i class="fas fa-handshake"></i> <strong>Promesa detectada:</strong> Prometió ${formatCurrency(foundPromise.promisedAmount)} el ${formatDate(foundPromise.promisedDate)} via ${escapeHtml(foundPromise.paymentMethod)}. Al guardar se marcará como <strong>CUMPLIDA</strong>.`;
+        }
+    } else {
+        if (paymentPromiseId) paymentPromiseId.value = '';
+        if (promiseLinkedAlert) promiseLinkedAlert.style.display = 'none';
+    }
+
     els.paymentType.value = 'total';
+    const methodSelect = document.getElementById('paymentMethodSelect');
+    if (methodSelect) methodSelect.value = foundPromise ? foundPromise.paymentMethod : 'Efectivo';
+
     els.paidAmount.value = client.installmentAmount ? client.installmentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     els.amountGiven.value = '';
-    els.hasPaid.checked = client.paymentStatus === 'paid';
+
+    const punitoriosGeneratedEl = document.getElementById('punitoriosGenerated');
+    const punitoriosWaivedEl = document.getElementById('punitoriosWaived');
+    const paymentTimeEl = document.getElementById('paymentTime');
+    const paymentUserEl = document.getElementById('paymentUser');
+
+    const calculatedPenalty = (client.paymentStatus === 'overdue' && client.daysOverdue > 0) ? calculatePunitorios(client.installmentAmount, client.daysOverdue, client.penaltyRate) : 0;
+    if (punitoriosGeneratedEl) punitoriosGeneratedEl.value = calculatedPenalty.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (punitoriosWaivedEl) punitoriosWaivedEl.value = '0,00';
+    if (paymentTimeEl) paymentTimeEl.value = getCurrentTime();
+    if (paymentUserEl && !paymentUserEl.value) paymentUserEl.value = 'Cobrador';
+
+    els.hasPaid.checked = client.paymentStatus === 'paid' || true;
     els.isOverdue.checked = client.isOverdue;
     els.daysOverdue.value = client.daysOverdue || 1;
-    els.paymentDate.value = client.lastPaymentDate || getToday();
+    els.paymentDate.value = getToday();
     els.paymentPeriodMonth.value = client.periodMonth || getToday().substring(0, 7);
     els.paymentInstallmentNumber.value = instText;
     els.paymentNotes.value = '';
@@ -1071,34 +1964,39 @@ function updatePaymentCalculationBox(client) {
     if (!els.paymentCalculationBox) return;
 
     const pType = els.paymentType.value;
-    const toCharge = parseCurrencyInput(els.paidAmount.value) || client.installmentAmount || 0;
+    const baseCuota = parseCurrencyInput(els.paidAmount.value) || client.installmentAmount || 0;
     const given = parseCurrencyInput(els.amountGiven.value);
     const isOverdueChecked = els.isOverdue ? els.isOverdue.checked : client.isOverdue;
     const daysOverdueVal = els.daysOverdue ? (parseInt(els.daysOverdue.value) || 0) : client.daysOverdue;
 
-    const punitorios = isOverdueChecked && daysOverdueVal > 0 ? calculatePunitorios(toCharge, daysOverdueVal, client.penaltyRate) : 0;
-    const totalWithPenalty = toCharge + punitorios;
+    const punitoriosGen = isOverdueChecked && daysOverdueVal > 0 ? calculatePunitorios(baseCuota, daysOverdueVal, client.penaltyRate) : 0;
+    const punitoriosWaived = parseCurrencyInput(document.getElementById('punitoriosWaived') ? document.getElementById('punitoriosWaived').value : 0);
+    const netPenalty = Math.max(0, punitoriosGen - punitoriosWaived);
+    const totalToCollect = baseCuota + netPenalty;
 
-    let html = `<div class="calc-row"><span>Subtotal Cuota:</span> <strong>${formatCurrency(toCharge)}</strong></div>`;
+    let html = `<div class="calc-row"><span>Importe Cuota:</span> <strong>${formatCurrency(baseCuota)}</strong></div>`;
 
-    if (punitorios > 0) {
-        html += `<div class="calc-row penalty"><span>Punitorios por Mora (${client.daysOverdue} días, ${client.penaltyRate || 1.0}%/día):</span> <strong>+ ${formatCurrency(punitorios)}</strong></div>`;
-        html += `<div class="calc-row total"><span>Total con Punitorios:</span> <strong>${formatCurrency(totalWithPenalty)}</strong></div>`;
+    if (punitoriosGen > 0) {
+        html += `<div class="calc-row penalty"><span>Punitorios Generados (${daysOverdueVal} días, ${client.penaltyRate || 1.0}%/día):</span> <strong>+ ${formatCurrency(punitoriosGen)}</strong></div>`;
+        if (punitoriosWaived > 0) {
+            html += `<div class="calc-row" style="color:var(--success);"><span>Punitorios Condonados/Bonificados:</span> <strong>- ${formatCurrency(punitoriosWaived)}</strong></div>`;
+        }
+        html += `<div class="calc-row total"><span>Total efectivamente a Cobrar:</span> <strong>${formatCurrency(totalToCollect)}</strong></div>`;
     }
 
     if (pType === 'partial') {
-        const remaining = totalWithPenalty - toCharge;
+        const remaining = totalToCollect - baseCuota;
         html += `<div class="calc-row partial"><span>Pago Parcial - Saldo Pendiente:</span> <strong>${formatCurrency(remaining > 0 ? remaining : 0)}</strong></div>`;
     } else if (pType === 'advance') {
         html += `<div class="calc-row advance"><span>Adelanto de Cuota:</span> <strong>Se acredita para el período siguiente</strong></div>`;
     }
 
     if (given > 0) {
-        const change = given - totalWithPenalty;
+        const change = given - totalToCollect;
         if (change >= 0) {
             html += `<div class="calc-row change"><span>Vuelto a entregar al cliente:</span> <strong>${formatCurrency(change)}</strong></div>`;
         } else {
-            html += `<div class="calc-row pending"><span>Falta para completar:</span> <strong>${formatCurrency(Math.abs(change))}</strong></div>`;
+            html += `<div class="calc-row pending"><span>Falta para completar cobro:</span> <strong>${formatCurrency(Math.abs(change))}</strong></div>`;
         }
     }
 
@@ -1120,7 +2018,7 @@ function renderPaymentHistory(client) {
         return `
             <div class="history-item">
                 <div>
-                    <span class="hist-date"><i class="fas fa-calendar"></i> ${formatDate(p.date)} - Período: ${escapeHtml(mLabel)}${instLabel}</span>
+                    <span class="hist-date"><i class="fas fa-calendar"></i> ${formatDate(p.date)} - N° Comp: ${escapeHtml(p.receiptNumber)} - Período: ${escapeHtml(mLabel)}${instLabel}</span>
                     ${p.notes ? `<div class="hist-note">${escapeHtml(p.notes)}</div>` : ''}
                 </div>
                 <span class="hist-amount">${formatCurrency(p.amount)}</span>
@@ -1142,17 +2040,29 @@ function handleSavePayment(e) {
     if (!client) return;
 
     const pType = els.paymentType.value;
+    const methodSelect = document.getElementById('paymentMethodSelect');
+    const paymentMethodVal = methodSelect ? methodSelect.value : 'Efectivo';
     const hasPaid = els.hasPaid.checked;
     const isOverdue = els.isOverdue.checked;
     const daysOverdue = parseInt(els.daysOverdue.value) || 0;
     const paymentDate = els.paymentDate.value || getToday();
+    const paymentTime = document.getElementById('paymentTime') ? document.getElementById('paymentTime').value : getCurrentTime();
     const paidAmountVal = parseCurrencyInput(els.paidAmount.value) || client.installmentAmount || 0;
     const amountGivenVal = parseCurrencyInput(els.amountGiven.value);
     const payPeriodMonth = els.paymentPeriodMonth.value || client.periodMonth || paymentDate.substring(0, 7);
     const payInstallmentNumber = els.paymentInstallmentNumber.value.trim() || `${client.installmentNumber || 1}`;
     const payNote = els.paymentNotes.value.trim();
+    const paymentUserVal = document.getElementById('paymentUser') ? document.getElementById('paymentUser').value.trim() : 'Cobrador';
 
-    const punitorios = (isOverdue && daysOverdue > 0) ? calculatePunitorios(client.installmentAmount, daysOverdue, client.penaltyRate) : 0;
+    const punitoriosGen = parseCurrencyInput(document.getElementById('punitoriosGenerated') ? document.getElementById('punitoriosGenerated').value : 0);
+    const punitoriosWaived = parseCurrencyInput(document.getElementById('punitoriosWaived') ? document.getElementById('punitoriosWaived').value : 0);
+
+    // Duplicate Check
+    const isDuplicate = client.payments.some(p => p.date === paymentDate && p.periodMonth === payPeriodMonth && p.installmentNumber === payInstallmentNumber);
+    if (isDuplicate) {
+        const confirmDup = confirm(`ADVERTENCIA: Ya existe un pago registrado para ${client.name} el día ${formatDate(paymentDate)} para la cuota ${payInstallmentNumber} del período ${payPeriodMonth}.\n\n¿Desea registrar este pago de todas formas?`);
+        if (!confirmDup) return;
+    }
 
     let status = 'pending';
     if (hasPaid || pType === 'total' || pType === 'advance') {
@@ -1176,37 +2086,63 @@ function handleSavePayment(e) {
         }
     }
 
-    if (hasPaid || paidAmountVal > 0) {
-        client.lastPaymentDate = paymentDate;
+    const receiptNum = generateReceiptNumber();
+    let linkedPromiseId = document.getElementById('paymentPromiseId') ? document.getElementById('paymentPromiseId').value : null;
 
-        const typeLabels = { total: 'Pago Total', partial: 'Pago Parcial', advance: 'Adelanto de Cuota' };
-        let noteDetails = `[${typeLabels[pType] || 'Pago'}]`;
-        if (punitorios > 0) noteDetails += ` (Incluye Punitorios: ${formatCurrency(punitorios)})`;
-        if (amountGivenVal > 0) noteDetails += ` (Entregó: ${formatCurrency(amountGivenVal)})`;
-        if (payNote) noteDetails += ` - ${payNote}`;
-
-        const newPayment = {
-            id: generateId(),
-            amount: paidAmountVal,
-            amountGiven: amountGivenVal,
-            punitorios: punitorios,
-            paymentType: pType,
-            date: paymentDate,
-            periodMonth: payPeriodMonth,
-            installmentNumber: payInstallmentNumber,
-            notes: noteDetails
-        };
-        if (!client.payments) client.payments = [];
-        client.payments.push(newPayment);
+    if (!linkedPromiseId && Array.isArray(client.promises)) {
+        const pendingPr = client.promises.find(pr => pr.status === 'pendiente' || pr.status === 'vencida');
+        if (pendingPr) linkedPromiseId = pendingPr.id;
     }
+
+    const newPayment = {
+        id: generateId(),
+        receiptNumber: receiptNum,
+        clientId: client.id,
+        clientName: client.name,
+        dni: client.dni || '',
+        branchNumber: client.branchNumber || '',
+        requestNumber: client.requestNumber || '',
+        date: paymentDate,
+        time: paymentTime,
+        periodMonth: payPeriodMonth,
+        installmentNumber: payInstallmentNumber,
+        installmentAmount: client.installmentAmount || paidAmountVal,
+        punitorios: punitoriosGen,
+        punitoriosWaived: punitoriosWaived,
+        amount: paidAmountVal + Math.max(0, punitoriosGen - punitoriosWaived),
+        amountGiven: amountGivenVal,
+        paymentMethod: paymentMethodVal,
+        paymentType: pType,
+        daysOverdue: daysOverdue,
+        notes: payNote,
+        user: paymentUserVal || 'Cobrador',
+        exported: false,
+        exportedAt: null,
+        promiseId: linkedPromiseId,
+        createdAt: new Date().toISOString()
+    };
+
+    if (linkedPromiseId && Array.isArray(client.promises)) {
+        const pr = client.promises.find(p => p.id === linkedPromiseId);
+        if (pr) {
+            pr.status = 'cumplida';
+            pr.paymentId = newPayment.id;
+        }
+    }
+
+    if (!client.payments) client.payments = [];
+    client.payments.push(newPayment);
+    client.lastPaymentDate = paymentDate;
 
     updateOverdueStatuses();
     saveClients();
     renderClients();
 
-    const msg = (hasPaid || pType === 'total' || pType === 'advance') ? 'Pago registrado correctamente' : 'Estado de pago actualizado';
-    showToast(msg, 'success');
     closeModalFn(els.paymentModal);
+    showToast(`Pago registrado con éxito (Comprobante N.° ${receiptNum})`, 'success');
+
+    // Show printable receipt modal automatically
+    showReceiptModal(client.id, newPayment.id);
 }
 
 // ========================================
@@ -1298,6 +2234,88 @@ function setupEventListeners() {
     if (els.copySummaryBtn) {
         els.copySummaryBtn.addEventListener('click', copySummaryToClipboard);
     }
+
+    // Gestiones & Client History Modal Event Listeners
+    const gestionForm = document.getElementById('gestionForm');
+    if (gestionForm) gestionForm.addEventListener('submit', handleSaveGestion);
+
+    const closeGestionModal = document.getElementById('closeGestionModal');
+    if (closeGestionModal) closeGestionModal.addEventListener('click', () => closeModalFn(document.getElementById('gestionModal')));
+
+    const cancelGestionBtn = document.getElementById('cancelGestionBtn');
+    if (cancelGestionBtn) cancelGestionBtn.addEventListener('click', () => closeModalFn(document.getElementById('gestionModal')));
+
+    const gestionResult = document.getElementById('gestionResult');
+    if (gestionResult) {
+        gestionResult.addEventListener('change', (e) => {
+            const promiseAutoFields = document.getElementById('promiseAutoFields');
+            if (promiseAutoFields) {
+                promiseAutoFields.style.display = (e.target.value === 'Prometió pagar') ? 'block' : 'none';
+            }
+        });
+    }
+
+    const closeClientHistoryModal = document.getElementById('closeClientHistoryModal');
+    if (closeClientHistoryModal) closeClientHistoryModal.addEventListener('click', () => closeModalFn(document.getElementById('clientHistoryModal')));
+
+    const closeClientHistoryBtn = document.getElementById('closeClientHistoryBtn');
+    if (closeClientHistoryBtn) closeClientHistoryBtn.addEventListener('click', () => closeModalFn(document.getElementById('clientHistoryModal')));
+
+    // Promises Event Listeners
+    const promiseForm = document.getElementById('promiseForm');
+    if (promiseForm) promiseForm.addEventListener('submit', handleSavePromise);
+
+    const closePromiseModal = document.getElementById('closePromiseModal');
+    if (closePromiseModal) closePromiseModal.addEventListener('click', () => closeModalFn(document.getElementById('promiseModal')));
+
+    const cancelPromiseBtn = document.getElementById('cancelPromiseBtn');
+    if (cancelPromiseBtn) cancelPromiseBtn.addEventListener('click', () => closeModalFn(document.getElementById('promiseModal')));
+
+    // Receipt Modal Event Listeners
+    const printReceiptBtn = document.getElementById('printReceiptBtn');
+    if (printReceiptBtn) printReceiptBtn.addEventListener('click', () => window.print());
+
+    const closeReceiptModal = document.getElementById('closeReceiptModal');
+    if (closeReceiptModal) closeReceiptModal.addEventListener('click', () => closeModalFn(document.getElementById('receiptModal')));
+
+    const closeReceiptBtn = document.getElementById('closeReceiptBtn');
+    if (closeReceiptBtn) closeReceiptBtn.addEventListener('click', () => closeModalFn(document.getElementById('receiptModal')));
+
+    // History Modal Event Listeners
+    const historyNavBtn = document.getElementById('historyNavBtn');
+    if (historyNavBtn) historyNavBtn.addEventListener('click', openHistoryModal);
+
+    const closeHistoryModal = document.getElementById('closeHistoryModal');
+    if (closeHistoryModal) closeHistoryModal.addEventListener('click', () => closeModalFn(document.getElementById('historyModal')));
+
+    const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+    if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', () => closeModalFn(document.getElementById('historyModal')));
+
+    ['histFilterClient', 'histFilterPeriod', 'histFilterFrom', 'histFilterTo', 'histFilterMethod', 'histFilterExportStatus'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', renderHistoryTable);
+            el.addEventListener('change', renderHistoryTable);
+        }
+    });
+
+    // Export Modal Event Listeners
+    const exportNavBtn = document.getElementById('exportNavBtn');
+    if (exportNavBtn) exportNavBtn.addEventListener('click', openExportModal);
+
+    const closeExportModal = document.getElementById('closeExportModal');
+    if (closeExportModal) closeExportModal.addEventListener('click', () => closeModalFn(document.getElementById('exportModal')));
+
+    const cancelExportBtn = document.getElementById('cancelExportBtn');
+    if (cancelExportBtn) cancelExportBtn.addEventListener('click', () => closeModalFn(document.getElementById('exportModal')));
+
+    ['expDateFrom', 'expDateTo', 'expPeriodMonth', 'expExportScope'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', updateExportMatchCount);
+    });
+
+    const exportPaymentsForm = document.getElementById('exportPaymentsForm');
+    if (exportPaymentsForm) exportPaymentsForm.addEventListener('submit', handleStartExport);
 
     els.paymentForm.addEventListener('submit', handleSavePayment);
     els.isOverdue.addEventListener('change', () => {
