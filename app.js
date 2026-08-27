@@ -23,6 +23,7 @@ const TYPE_CONFIG = {
 
 const STATUS_CONFIG = {
     paid: { label: 'Pagado', class: 'paid', dotClass: 'paid' },
+    partial: { label: 'Pago Parcial', class: 'partial', dotClass: 'partial' },
     pending: { label: 'Pendiente', class: 'pending', dotClass: 'pending' },
     overdue: { label: 'Atrasado', class: 'overdue', dotClass: 'overdue' }
 };
@@ -559,6 +560,27 @@ function updateDailyDashboard() {
         currentDashboardDateEl.textContent = formatDate(todayStr);
     }
 
+    const portfolioPeriodLabel = document.getElementById('portfolioPeriodLabel');
+    if (portfolioPeriodLabel) {
+        portfolioPeriodLabel.textContent = currentMonthFilter === 'all' ? 'TODOS LOS MESES' : formatMonthYear(currentMonthFilter).toUpperCase();
+    }
+
+    // Filter portfolio for stats based on currentMonthFilter
+    let targetClients = clients;
+    if (currentMonthFilter !== 'all') {
+        targetClients = clients.filter(c => c.periodMonth === currentMonthFilter);
+    }
+
+    let monthTotalAmount = 0;
+    let monthCollectedAmount = 0;
+    let monthPendingAmount = 0;
+    let monthTotalCount = targetClients.length;
+    let monthPaidCount = 0;
+    let monthPendingCount = 0;
+    let monthPartialCount = 0;
+    let unmanagedCount = 0;
+    let followUpTodayCount = 0;
+
     let todayDueCount = 0;
     let todayDueAmount = 0;
     let promisesTodayCount = 0;
@@ -571,11 +593,49 @@ function updateDailyDashboard() {
     let paymentsTodayCount = 0;
     let paymentsTodayAmount = 0;
 
-    clients.forEach(client => {
+    targetClients.forEach(client => {
+        const instVal = client.installmentAmount || 0;
+        monthTotalAmount += instVal;
+
+        // Calculate paid vs pending for this client/installment
+        let totalPaidForCuota = 0;
+        if (Array.isArray(client.payments)) {
+            client.payments.forEach(p => {
+                totalPaidForCuota += (p.amount || 0);
+                if (p.date === todayStr) {
+                    paymentsTodayCount++;
+                    paymentsTodayAmount += (p.amount || 0);
+                }
+            });
+        }
+
+        if (client.paymentStatus === 'paid') {
+            monthPaidCount++;
+            monthCollectedAmount += instVal;
+        } else if (client.paymentStatus === 'partial') {
+            monthPartialCount++;
+            monthCollectedAmount += totalPaidForCuota;
+            monthPendingAmount += Math.max(0, instVal - totalPaidForCuota);
+        } else {
+            monthPendingCount++;
+            monthPendingAmount += instVal;
+        }
+
+        // Unmanaged check
+        if (!Array.isArray(client.gestiones) || client.gestiones.length === 0) {
+            unmanagedCount++;
+        }
+
+        // Follow up today check
+        if (Array.isArray(client.gestiones)) {
+            const hasTodayFollowUp = client.gestiones.some(g => g.nextFollowUpDate === todayStr);
+            if (hasTodayFollowUp) followUpTodayCount++;
+        }
+
         // Due today
         if (client.paymentDay === todayDay && client.paymentStatus !== 'paid') {
             todayDueCount++;
-            todayDueAmount += (client.installmentAmount || 0);
+            todayDueAmount += Math.max(0, instVal - totalPaidForCuota);
         }
 
         // Promises
@@ -596,17 +656,11 @@ function updateDailyDashboard() {
                 }
             });
         }
-
-        // Payments today
-        if (Array.isArray(client.payments)) {
-            client.payments.forEach(p => {
-                if (p.date === todayStr) {
-                    paymentsTodayCount++;
-                    paymentsTodayAmount += (p.amount || 0);
-                }
-            });
-        }
     });
+
+    const recoveryRate = monthTotalAmount > 0 ? ((monthCollectedAmount / monthTotalAmount) * 100).toFixed(1) : '0,0';
+    const totalPromisesEvaluated = promisesFulfilledCount + promisesBrokenCount;
+    const promiseEffectiveness = totalPromisesEvaluated > 0 ? ((promisesFulfilledCount / totalPromisesEvaluated) * 100).toFixed(1) : '0,0';
 
     // Update DOM
     const setTxt = (id, text) => {
@@ -614,17 +668,30 @@ function updateDailyDashboard() {
         if (el) el.textContent = text;
     };
 
+    setTxt('dashMonthTotalAmount', formatCurrency(monthTotalAmount));
+    setTxt('dashMonthTotalClientsCount', `${monthTotalCount} cuotas`);
+    setTxt('dashMonthCollectedAmount', formatCurrency(monthCollectedAmount));
+    setTxt('dashMonthPaidCount', `${monthPaidCount} pagados`);
+    setTxt('dashMonthPendingAmount', formatCurrency(monthPendingAmount));
+    setTxt('dashMonthPendingCount', `${monthPendingCount} pendientes`);
+    setTxt('dashMonthRecoveryRate', `${recoveryRate.replace('.', ',')}%`);
+    setTxt('dashMonthPartialCount', `${monthPartialCount} pagos parciales`);
+
+    setTxt('dashUnmanagedCount', unmanagedCount);
+    setTxt('dashFollowUpTodayCount', followUpTodayCount);
     setTxt('dashTodayDueCount', todayDueCount);
     setTxt('dashTodayDueAmount', formatCurrency(todayDueAmount));
     setTxt('dashPromisesTodayCount', promisesTodayCount);
     setTxt('dashPromisesTodayAmount', formatCurrency(promisesTodayAmount));
     setTxt('dashPromisesOverdueCount', promisesOverdueCount);
+    setTxt('dashPromisesBrokenCount', promisesOverdueCount);
     setTxt('dashPromisesPendingCount', promisesPendingCount);
     setTxt('dashPromisesFulfilledCount', promisesFulfilledCount);
     setTxt('dashPromisesFulfilledAmount', formatCurrency(promisesFulfilledAmount));
-    setTxt('dashPromisesBrokenCount', promisesBrokenCount);
     setTxt('dashPaymentsTodayCount', paymentsTodayCount);
     setTxt('dashPaymentsTodayAmount', formatCurrency(paymentsTodayAmount));
+    setTxt('dashPromiseEffectiveness', `${promiseEffectiveness.replace('.', ',')}%`);
+    setTxt('dashPromiseEffectivenessSub', `${promisesFulfilledCount} de ${totalPromisesEvaluated} cumplidas`);
 }
 
 // ========================================
@@ -780,22 +847,183 @@ function exportData() {
     showToast('Copia de seguridad descargada', 'success');
 }
 
+function getClientUniqueKey(c) {
+    if (!c) return '';
+    const dni = (c.dni || '').toString().trim().replace(/\D/g, '');
+    const branch = formatBranchNumber(c.branchNumber);
+    const req = formatRequestNumber(c.requestNumber);
+    const period = (c.periodMonth || getToday().substring(0, 7)).trim();
+    const inst = c.installmentNumber || 1;
+
+    if (dni || branch || req) {
+        return `${dni}_${branch}_${req}_${period}_${inst}`;
+    }
+    // Fallback if DNI/request numbers are absent
+    const cleanName = (c.name || '').toLowerCase().trim().replace(/\s+/g, '_');
+    return `${cleanName}_${period}_${inst}`;
+}
+
+function parseCSVToClients(csvText) {
+    const lines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length < 2) return [];
+
+    const delimiter = lines[0].includes(';') ? ';' : ',';
+    const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase());
+
+    const findIndex = (keywords) => {
+        return headers.findIndex(h => keywords.some(k => h.includes(k)));
+    };
+
+    const idxName = findIndex(['nombre', 'cliente']);
+    const idxDni = findIndex(['dni', 'documento']);
+    const idxBranch = findIndex(['sucursal', 'suc']);
+    const idxRequest = findIndex(['solicitud', 'operacion', 'operación']);
+    const idxInst = findIndex(['cuota', 'n_cuota', 'numero_cuota']);
+    const idxTotalInst = findIndex(['total_cuotas', 'cuotas_totales']);
+    const idxPeriod = findIndex(['periodo', 'período', 'mes']);
+    const idxType = findIndex(['tipo', 'categoria']);
+    const idxSalaryDay = findIndex(['sueldo', 'dia_sueldo']);
+    const idxPaymentDay = findIndex(['vencimiento', 'venc', 'dia_pago']);
+    const idxLoanAmount = findIndex(['prestamo', 'préstamo', 'monto_prestamo']);
+    const idxInstAmount = findIndex(['monto', 'monto_cuota', 'importe']);
+    const idxPhone = findIndex(['telefono', 'teléfono', 'celular', 'phone']);
+    const idxEmail = findIndex(['email', 'mail']);
+    const idxNotes = findIndex(['notas', 'observaciones']);
+
+    const parsedClients = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        const rawRow = lines[i];
+        if (!rawRow.trim()) continue;
+
+        // Smart split taking quotes into account
+        const values = [];
+        let insideQuotes = false;
+        let currentVal = '';
+        for (let ch of rawRow) {
+            if (ch === '"') {
+                insideQuotes = !insideQuotes;
+            } else if (ch === delimiter && !insideQuotes) {
+                values.push(currentVal.trim().replace(/^["']|["']$/g, ''));
+                currentVal = '';
+            } else {
+                currentVal += ch;
+            }
+        }
+        values.push(currentVal.trim().replace(/^["']|["']$/g, ''));
+
+        const getVal = (idx) => (idx !== -1 && values[idx] !== undefined) ? values[idx] : '';
+
+        const name = getVal(idxName);
+        if (!name) continue;
+
+        const newC = {
+            id: generateId(),
+            name: name,
+            dni: getVal(idxDni),
+            branchNumber: formatBranchNumber(getVal(idxBranch)),
+            requestNumber: formatRequestNumber(getVal(idxRequest)),
+            installmentNumber: parseInt(getVal(idxInst)) || 1,
+            totalInstallments: parseInt(getVal(idxTotalInst)) || 12,
+            periodMonth: getVal(idxPeriod) || getToday().substring(0, 7),
+            type: getVal(idxType).toLowerCase() || 'privado',
+            salaryDay: parseInt(getVal(idxSalaryDay)) || 10,
+            paymentDay: parseInt(getVal(idxPaymentDay)) || 10,
+            loanAmount: parseCurrencyInput(getVal(idxLoanAmount)),
+            installmentAmount: parseCurrencyInput(getVal(idxInstAmount)),
+            phone: getVal(idxPhone),
+            email: getVal(idxEmail),
+            notes: getVal(idxNotes),
+            paymentStatus: 'pending',
+            isOverdue: false,
+            daysOverdue: 0,
+            lastPaymentDate: '',
+            gestiones: [],
+            promises: [],
+            payments: []
+        };
+
+        if (!TYPE_CONFIG[newC.type]) newC.type = 'privado';
+
+        sanitizeClientSchema(newC);
+        parsedClients.push(newC);
+    }
+
+    return parsedClients;
+}
+
+function mergeMonthlyPortfolio(importedList) {
+    let updatedCount = 0;
+    let addedCount = 0;
+
+    importedList.forEach(importedItem => {
+        sanitizeClientSchema(importedItem);
+        const key = getClientUniqueKey(importedItem);
+
+        const existingIndex = clients.findIndex(c => getClientUniqueKey(c) === key);
+
+        if (existingIndex !== -1) {
+            const existing = clients[existingIndex];
+
+            // Update official system fields ONLY
+            existing.name = importedItem.name || existing.name;
+            existing.branchNumber = importedItem.branchNumber || existing.branchNumber;
+            existing.requestNumber = importedItem.requestNumber || existing.requestNumber;
+            existing.installmentNumber = importedItem.installmentNumber || existing.installmentNumber;
+            existing.totalInstallments = importedItem.totalInstallments || existing.totalInstallments;
+            existing.periodMonth = importedItem.periodMonth || existing.periodMonth;
+            existing.penaltyRate = importedItem.penaltyRate !== undefined ? importedItem.penaltyRate : existing.penaltyRate;
+            existing.dni = importedItem.dni || existing.dni;
+            existing.type = importedItem.type || existing.type;
+            existing.salaryDay = importedItem.salaryDay || existing.salaryDay;
+            existing.paymentDay = importedItem.paymentDay || existing.paymentDay;
+            existing.loanAmount = importedItem.loanAmount || existing.loanAmount;
+            existing.installmentAmount = importedItem.installmentAmount || existing.installmentAmount;
+            existing.phone = importedItem.phone || existing.phone;
+            existing.email = importedItem.email || existing.email;
+            if (importedItem.notes && !existing.notes.includes(importedItem.notes)) {
+                existing.notes = (existing.notes ? existing.notes + ' | ' : '') + importedItem.notes;
+            }
+
+            // CRITICAL: RETAIN INTERNAL GESTION DATA INTACT
+            sanitizeClientSchema(existing);
+            updatedCount++;
+        } else {
+            // New client entry in monthly portfolio
+            if (!importedItem.id) importedItem.id = generateId();
+            clients.push(importedItem);
+            addedCount++;
+        }
+    });
+
+    updateOverdueStatuses();
+    saveClients();
+    renderClients();
+
+    return { updatedCount, addedCount };
+}
+
 function importData(file) {
     const reader = new FileReader();
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.txt');
+
     reader.onload = (e) => {
         try {
-            const imported = JSON.parse(e.target.result);
-            if (!Array.isArray(imported)) {
-                throw new Error('El archivo no contiene un formato de clientes válido.');
+            let importedItems = [];
+            if (isCsv) {
+                importedItems = parseCSVToClients(e.target.result);
+                if (importedItems.length === 0) {
+                    throw new Error('No se encontraron registros válidos en la planilla CSV.');
+                }
+            } else {
+                const parsed = JSON.parse(e.target.result);
+                importedItems = Array.isArray(parsed) ? parsed : [parsed];
             }
-            imported.forEach(c => sanitizeClientSchema(c));
-            clients = imported;
-            updateOverdueStatuses();
-            saveClients();
-            renderClients();
-            showToast('Datos importados correctamente', 'success');
+
+            const { updatedCount, addedCount } = mergeMonthlyPortfolio(importedItems);
+            showToast(`Importación completada: ${updatedCount} actualizados, ${addedCount} nuevos agregados. ¡Datos de gestión preservados!`, 'success');
         } catch (err) {
-            showToast('Error al importar archivo JSON: ' + err.message, 'error');
+            showToast('Error al importar la planilla: ' + err.message, 'error');
         }
     };
     reader.readAsText(file);
@@ -815,7 +1043,6 @@ function resetDemoData() {
 // ========================================
 
 function updateMonthFilterOptions() {
-    if (!els.monthFilterSelect) return;
     const monthsSet = new Set();
     const currentMonthStr = getToday().substring(0, 7);
     monthsSet.add(currentMonthStr);
@@ -832,14 +1059,21 @@ function updateMonthFilterOptions() {
     const sortedMonths = Array.from(monthsSet).sort().reverse();
 
     const selectedValue = currentMonthFilter;
-    let optionsHtml = `<option value="all"${selectedValue === 'all' ? ' selected' : ''}>Todos los meses</option>`;
+    let optionsHtml = `<option value="all"${selectedValue === 'all' ? ' selected' : ''}>Todas las carteras (Todos)</option>`;
 
     sortedMonths.forEach(m => {
         const label = formatMonthYear(m);
         optionsHtml += `<option value="${m}"${selectedValue === m ? ' selected' : ''}>${label}</option>`;
     });
 
-    els.monthFilterSelect.innerHTML = optionsHtml;
+    if (els.monthFilterSelect) {
+        els.monthFilterSelect.innerHTML = optionsHtml;
+    }
+
+    const headerMonthSelect = document.getElementById('headerMonthSelect');
+    if (headerMonthSelect) {
+        headerMonthSelect.innerHTML = optionsHtml;
+    }
 }
 
 function updateStats() {
@@ -856,9 +1090,24 @@ function getFilteredClients() {
         filtered = filtered.filter(c => c.type === currentFilter);
     }
 
+    const todayStr = getToday();
     if (currentStatusFilter !== 'all') {
-        if (currentStatusFilter === 'today') {
+        if (currentStatusFilter === 'today' || currentStatusFilter === 'today_due') {
             filtered = filtered.filter(c => c.paymentDay === todayDay && c.paymentStatus !== 'paid');
+        } else if (currentStatusFilter === 'unmanaged') {
+            filtered = filtered.filter(c => !Array.isArray(c.gestiones) || c.gestiones.length === 0);
+        } else if (currentStatusFilter === 'partial') {
+            filtered = filtered.filter(c => c.paymentStatus === 'partial');
+        } else if (currentStatusFilter === 'promises') {
+            filtered = filtered.filter(c => Array.isArray(c.promises) && c.promises.some(p => p.status === 'pendiente'));
+        } else if (currentStatusFilter === 'promises_today') {
+            filtered = filtered.filter(c => Array.isArray(c.promises) && c.promises.some(p => p.promisedDate === todayStr && p.status === 'pendiente'));
+        } else if (currentStatusFilter === 'promises_broken') {
+            filtered = filtered.filter(c => Array.isArray(c.promises) && c.promises.some(p => p.status === 'vencida' || p.status === 'incumplida' || (p.promisedDate < todayStr && p.status === 'pendiente')));
+        } else if (currentStatusFilter === 'followup_today') {
+            filtered = filtered.filter(c => Array.isArray(c.gestiones) && c.gestiones.some(g => g.nextFollowUpDate === todayStr));
+        } else if (currentStatusFilter === 'payments_today') {
+            filtered = filtered.filter(c => Array.isArray(c.payments) && c.payments.some(p => p.date === todayStr));
         } else {
             filtered = filtered.filter(c => c.paymentStatus === currentStatusFilter);
         }
@@ -1106,14 +1355,16 @@ function renderClientCard(client) {
                 </button>
             </div>
             <div class="card-quick-actions">
+                ${client.phone ? `<a href="https://wa.me/${escapeHtml(client.phone.replace(/\D/g, ''))}?text=${encodeURIComponent('Hola ' + client.name + ', me comunico de Palmares Efectivo en el Acto por tu cuota de ' + formatMonthYear(client.periodMonth))}" target="_blank" class="btn-card-action btn-whatsapp"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+                ${client.phone ? `<a href="tel:${escapeHtml(client.phone)}" class="btn-card-action btn-call"><i class="fas fa-phone"></i> Llamar</a>` : ''}
                 <button type="button" class="btn-card-action btn-action-gestion" onclick="openGestionModal('${client.id}')">
-                    <i class="fas fa-headset"></i> Registrar gestión
+                    <i class="fas fa-headset"></i> Gestión
                 </button>
                 <button type="button" class="btn-card-action btn-action-promise" onclick="openPromiseModal('${client.id}')">
-                    <i class="fas fa-handshake"></i> Registrar promesa
+                    <i class="fas fa-handshake"></i> Promesa
                 </button>
                 <button type="button" class="btn-card-action btn-action-history" onclick="openClientHistoryModal('${client.id}')">
-                    <i class="fas fa-folder-open"></i> Ver historial (${(client.gestiones||[]).length + (client.promises||[]).length})
+                    <i class="fas fa-folder-open"></i> Historial (${(client.gestiones||[]).length + (client.promises||[]).length})
                 </button>
             </div>
         </div>
@@ -2064,11 +2315,31 @@ function handleSavePayment(e) {
         if (!confirmDup) return;
     }
 
+    // Calculate total accumulated payments for this installment/period
+    const netPenaltyToPay = Math.max(0, punitoriosGen - punitoriosWaived);
+    const effectiveCollectedForThisTransaction = paidAmountVal + netPenaltyToPay;
+
+    let previousPaymentsTotal = 0;
+    if (Array.isArray(client.payments)) {
+        client.payments.forEach(p => {
+            if (p.periodMonth === payPeriodMonth && p.installmentNumber === payInstallmentNumber) {
+                previousPaymentsTotal += (p.amount || 0);
+            }
+        });
+    }
+
+    const totalPaidSoFar = previousPaymentsTotal + effectiveCollectedForThisTransaction;
+    const fullCuotaTheoreticalTotal = (client.installmentAmount || paidAmountVal) + netPenaltyToPay;
+
     let status = 'pending';
-    if (hasPaid || pType === 'total' || pType === 'advance') {
+    if (pType === 'partial') {
+        if (totalPaidSoFar >= fullCuotaTheoreticalTotal) {
+            status = 'paid';
+        } else {
+            status = 'partial';
+        }
+    } else if (hasPaid || pType === 'total' || pType === 'advance') {
         status = 'paid';
-    } else if (pType === 'partial') {
-        status = 'pending';
     } else if (isOverdue) {
         status = 'overdue';
     }
@@ -2178,10 +2449,42 @@ function setupFilters() {
     if (els.monthFilterSelect) {
         els.monthFilterSelect.addEventListener('change', (e) => {
             currentMonthFilter = e.target.value;
+            const headerMonthSelect = document.getElementById('headerMonthSelect');
+            if (headerMonthSelect) headerMonthSelect.value = e.target.value;
             displayLimit = 20;
             renderClients();
         });
     }
+
+    const headerMonthSelect = document.getElementById('headerMonthSelect');
+    if (headerMonthSelect) {
+        headerMonthSelect.addEventListener('change', (e) => {
+            currentMonthFilter = e.target.value;
+            if (els.monthFilterSelect) els.monthFilterSelect.value = e.target.value;
+            displayLimit = 20;
+            renderClients();
+        });
+    }
+
+    // Quick Filter click handlers on Daily Dashboard cards
+    document.querySelectorAll('.daily-card.clickable[data-quick-filter]').forEach(card => {
+        card.addEventListener('click', () => {
+            const filterKey = card.dataset.quickFilter;
+            currentStatusFilter = filterKey;
+
+            // Sync filter chips UI
+            document.querySelectorAll('[data-status]').forEach(b => b.classList.remove('active'));
+            const matchingChip = document.querySelector(`[data-status="${filterKey}"]`);
+            if (matchingChip) matchingChip.classList.add('active');
+
+            displayLimit = 20;
+            renderClients();
+
+            // Scroll down smoothly to toolbar/clients container
+            const toolbarEl = document.querySelector('.toolbar');
+            if (toolbarEl) toolbarEl.scrollIntoView({ behavior: 'smooth' });
+        });
+    });
 }
 
 function setupEventListeners() {

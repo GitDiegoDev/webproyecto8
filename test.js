@@ -13,6 +13,11 @@ global.document = {
     execCommand: () => {},
     addEventListener: () => {},
     querySelectorAll: () => [],
+    createElement: () => ({
+        style: {},
+        classList: { add: () => {}, remove: () => {} },
+        appendChild: () => {}
+    }),
     getElementById: (id) => ({
         value: '',
         textContent: '',
@@ -261,6 +266,44 @@ runTest('8. Export Payments & Mark Status Exported', () => {
 
     assert.strictEqual(client.payments[0].exported, true);
     assert(client.payments[0].exportedAt !== null);
+});
+
+runTest('9. Portfolio Import Merge Preserves Gestiones, Promises & Payments', () => {
+    const existingClient = {
+        id: 'c_merge',
+        name: 'Juan Perez',
+        dni: '20.123.456',
+        branchNumber: '01',
+        requestNumber: '10',
+        installmentNumber: 2,
+        periodMonth: '2026-08',
+        installmentAmount: 50000,
+        gestiones: [{ id: 'g1', type: 'Llamada telefónica', result: 'Prometió pagar' }],
+        promises: [{ id: 'pr1', status: 'pendiente', promisedAmount: 50000 }],
+        payments: [{ id: 'p1', amount: 50000, receiptNumber: '00000100' }]
+    };
+    sanitizeClientSchema(existingClient);
+    clients = [existingClient];
+
+    // Updated sheet from official system with new installmentAmount
+    const importedUpdate = [{
+        name: 'Juan Perez',
+        dni: '20123456',
+        branchNumber: '1',
+        requestNumber: '10',
+        installmentNumber: 2,
+        periodMonth: '2026-08',
+        installmentAmount: 55000 // Updated official amount
+    }];
+
+    const { updatedCount, addedCount } = mergeMonthlyPortfolio(importedUpdate);
+
+    assert.strictEqual(updatedCount, 1);
+    assert.strictEqual(addedCount, 0);
+    assert.strictEqual(clients[0].installmentAmount, 55000, 'Official amount updated');
+    assert.strictEqual(clients[0].gestiones.length, 1, 'Gestiones preserved');
+    assert.strictEqual(clients[0].promises.length, 1, 'Promises preserved');
+    assert.strictEqual(clients[0].payments.length, 1, 'Payments preserved');
 });
 
 console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);
