@@ -24,6 +24,15 @@
                     <span class="tagline">Efectivo en el Acto</span>
                 </div>
             </div>
+
+            <!-- Selector de Cartera Mensual -->
+            <div class="header-period-selector">
+                <label for="headerMonthSelect"><i class="fas fa-calendar-alt"></i> Cartera Mensual:</label>
+                <select id="headerMonthSelect" class="form-control-header">
+                    <option value="all">Todas las carteras</option>
+                </select>
+            </div>
+
             <div class="header-stats">
                 <div class="stat-item">
                     <span class="stat-number" id="totalClients">0</span>
@@ -40,73 +49,103 @@
             </div>
         </header>
 
-        <!-- Panel de Cobranza Diaria y Alertas de Promesas -->
+        <!-- Dashboard de Cartera Mensual & Atención Hoy -->
         <section class="daily-dashboard" id="dailyDashboard">
             <div class="daily-dashboard-header">
-                <h2><i class="fas fa-chart-line"></i> COBRANZA DE HOY</h2>
+                <h2><i class="fas fa-chart-pie"></i> CARTERA MENSUAL — <span id="portfolioPeriodLabel">TODOS LOS MESES</span></h2>
                 <span class="dashboard-date" id="currentDashboardDate">--/--/----</span>
             </div>
+
+            <!-- KPIs Globales de la Cartera Mensual -->
+            <div class="portfolio-kpis-grid">
+                <div class="kpi-card kpi-total">
+                    <span class="kpi-label">Importe Cartera</span>
+                    <div class="kpi-val" id="dashMonthTotalAmount">$ 0,00</div>
+                    <span class="kpi-sub" id="dashMonthTotalClientsCount">0 clientes/cuotas</span>
+                </div>
+                <div class="kpi-card kpi-collected">
+                    <span class="kpi-label">Importe Cobrado</span>
+                    <div class="kpi-val" id="dashMonthCollectedAmount">$ 0,00</div>
+                    <span class="kpi-sub" id="dashMonthPaidCount">0 pagados</span>
+                </div>
+                <div class="kpi-card kpi-pending">
+                    <span class="kpi-label">Importe Pendiente</span>
+                    <div class="kpi-val" id="dashMonthPendingAmount">$ 0,00</div>
+                    <span class="kpi-sub" id="dashMonthPendingCount">0 pendientes</span>
+                </div>
+                <div class="kpi-card kpi-recovery">
+                    <span class="kpi-label">% Recuperación</span>
+                    <div class="kpi-val" id="dashMonthRecoveryRate">0,0%</div>
+                    <span class="kpi-sub" id="dashMonthPartialCount">0 pagos parciales</span>
+                </div>
+            </div>
+
+            <div class="daily-dashboard-header" style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.2); padding-top: 0.75rem;">
+                <h2><i class="fas fa-fire"></i> ATENCIÓN HOY (Acciones Rápidas)</h2>
+                <span class="dashboard-subtitle">Filtra clientes al instante según estado diario</span>
+            </div>
+
             <div class="daily-grid">
-                <div class="daily-card highlight-today">
-                    <div class="daily-icon"><i class="fas fa-calendar-day"></i></div>
+                <div class="daily-card alert-promises-overdue clickable" data-quick-filter="promises_broken" title="Filtrar promesas vencidas / incumplidas">
+                    <div class="daily-icon"><i class="fas fa-exclamation-triangle"></i></div>
                     <div class="daily-info">
-                        <span class="daily-label">Cuotas a cobrar hoy</span>
-                        <div class="daily-val" id="dashTodayDueCount">0</div>
-                        <span class="daily-sub" id="dashTodayDueAmount">$ 0,00</span>
+                        <span class="daily-label">🔴 Promesas vencidas</span>
+                        <div class="daily-val" id="dashPromisesOverdueCount">0</div>
+                        <span class="daily-sub">Incumplidas</span>
                     </div>
                 </div>
 
-                <div class="daily-card alert-promises-today">
+                <div class="daily-card alert-promises-today clickable" data-quick-filter="promises_today" title="Filtrar promesas para hoy">
                     <div class="daily-icon"><i class="fas fa-handshake"></i></div>
                     <div class="daily-info">
-                        <span class="daily-label">Promesas para hoy</span>
+                        <span class="daily-label">🟠 Promesas para hoy</span>
                         <div class="daily-val" id="dashPromisesTodayCount">0</div>
                         <span class="daily-sub" id="dashPromisesTodayAmount">$ 0,00</span>
                     </div>
                 </div>
 
-                <div class="daily-card alert-promises-overdue">
-                    <div class="daily-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                <div class="daily-card alert-followup-today clickable" data-quick-filter="followup_today" title="Filtrar seguimientos para hoy">
+                    <div class="daily-icon"><i class="fas fa-headset"></i></div>
                     <div class="daily-info">
-                        <span class="daily-label">Promesas vencidas</span>
-                        <div class="daily-val" id="dashPromisesOverdueCount">0</div>
-                        <span class="daily-sub">Requieren atención</span>
+                        <span class="daily-label">🟡 Seguimientos de hoy</span>
+                        <div class="daily-val" id="dashFollowUpTodayCount">0</div>
+                        <span class="daily-sub">Acciones programadas</span>
                     </div>
                 </div>
 
-                <div class="daily-card alert-promises-pending">
-                    <div class="daily-icon"><i class="fas fa-clock"></i></div>
+                <div class="daily-card alert-unmanaged clickable" data-quick-filter="unmanaged" title="Filtrar clientes sin gestionar">
+                    <div class="daily-icon"><i class="fas fa-user-clock"></i></div>
                     <div class="daily-info">
-                        <span class="daily-label">Promesas pendientes</span>
-                        <div class="daily-val" id="dashPromisesPendingCount">0</div>
-                        <span class="daily-sub">Futuras</span>
+                        <span class="daily-label">⚪ Sin gestionar</span>
+                        <div class="daily-val" id="dashUnmanagedCount">0</div>
+                        <span class="daily-sub">Sin registro previo</span>
+                    </div>
+                </div>
+
+                <div class="daily-card highlight-today clickable" data-quick-filter="today_due" title="Filtrar vencimientos de hoy">
+                    <div class="daily-icon"><i class="fas fa-calendar-day"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">🔵 Vencimientos de hoy</span>
+                        <div class="daily-val" id="dashTodayDueCount">0</div>
+                        <span class="daily-sub" id="dashTodayDueAmount">$ 0,00</span>
+                    </div>
+                </div>
+
+                <div class="daily-card highlight-collected clickable" data-quick-filter="payments_today" title="Filtrar pagos registrados hoy">
+                    <div class="daily-icon"><i class="fas fa-cash-register"></i></div>
+                    <div class="daily-info">
+                        <span class="daily-label">💰 Pagos de hoy</span>
+                        <div class="daily-val" id="dashPaymentsTodayCount">0</div>
+                        <span class="daily-sub" id="dashPaymentsTodayAmount">$ 0,00</span>
                     </div>
                 </div>
 
                 <div class="daily-card alert-promises-fulfilled">
-                    <div class="daily-icon"><i class="fas fa-check-circle"></i></div>
+                    <div class="daily-icon"><i class="fas fa-chart-line"></i></div>
                     <div class="daily-info">
-                        <span class="daily-label">Promesas cumplidas</span>
-                        <div class="daily-val" id="dashPromisesFulfilledCount">0</div>
-                        <span class="daily-sub" id="dashPromisesFulfilledAmount">$ 0,00</span>
-                    </div>
-                </div>
-
-                <div class="daily-card alert-promises-broken">
-                    <div class="daily-icon"><i class="fas fa-times-circle"></i></div>
-                    <div class="daily-info">
-                        <span class="daily-label">Promesas incumplidas</span>
-                        <div class="daily-val" id="dashPromisesBrokenCount">0</div>
-                        <span class="daily-sub">Sin pago registrado</span>
-                    </div>
-                </div>
-
-                <div class="daily-card highlight-collected">
-                    <div class="daily-icon"><i class="fas fa-cash-register"></i></div>
-                    <div class="daily-info">
-                        <span class="daily-label">Pagos registrados hoy</span>
-                        <div class="daily-val" id="dashPaymentsTodayCount">0</div>
-                        <span class="daily-sub" id="dashPaymentsTodayAmount">$ 0,00</span>
+                        <span class="daily-label">Efectividad promesas</span>
+                        <div class="daily-val" id="dashPromiseEffectiveness">0,0%</div>
+                        <span class="daily-sub" id="dashPromiseEffectivenessSub">0 de 0 cumplidas</span>
                     </div>
                 </div>
             </div>
@@ -175,30 +214,36 @@
                 </div>
             </div>
             <div class="filter-group">
-                <label>Estado de Pago</label>
+                <label>Filtros Rápidos de Cobranza</label>
                 <div class="filter-chips">
-                    <button class="chip active" data-status="all">Todos</button>
-                    <button class="chip" data-status="today">Cobra Hoy</button>
-                    <button class="chip" data-status="paid">Pagado</button>
-                    <button class="chip" data-status="pending">Pendiente</button>
-                    <button class="chip" data-status="overdue">Atrasado</button>
+                    <button class="chip active" data-status="all">TODOS</button>
+                    <button class="chip" data-status="unmanaged">SIN GESTIONAR</button>
+                    <button class="chip" data-status="pending">PENDIENTES</button>
+                    <button class="chip" data-status="paid">PAGADOS</button>
+                    <button class="chip" data-status="partial">PAGO PARCIAL</button>
+                    <button class="chip" data-status="promises">PROMESAS</button>
+                    <button class="chip" data-status="promises_today">PROMESAS PARA HOY</button>
+                    <button class="chip" data-status="promises_broken">PROMESAS INCUMPLIDAS</button>
+                    <button class="chip" data-status="followup_today">SEGUIMIENTOS DE HOY</button>
+                    <button class="chip" data-status="today">COBRA HOY</button>
+                    <button class="chip" data-status="overdue">ATRASADOS</button>
                 </div>
             </div>
 
             <div class="filter-group data-management-group">
-                <label>Gestión de Datos & Copias</label>
+                <label>Importación de Cartera & Copias de Seguridad</label>
                 <div class="action-buttons-row">
+                    <button type="button" class="btn-secondary btn-sm" id="importDataBtn" title="Importar o actualizar Planilla Oficial (CSV o JSON)">
+                        <i class="fas fa-file-import"></i> Importar Cartera (CSV/JSON)
+                    </button>
                     <button type="button" class="btn-secondary btn-sm" id="exportDataBtn" title="Descargar copia de seguridad en JSON">
                         <i class="fas fa-download"></i> Exportar JSON
-                    </button>
-                    <button type="button" class="btn-secondary btn-sm" id="importDataBtn" title="Restaurar copia de seguridad desde JSON">
-                        <i class="fas fa-upload"></i> Importar JSON
                     </button>
                     <button type="button" class="btn-secondary btn-sm btn-outline-danger" id="resetDemoBtn" title="Restablecer datos originales de demo">
                         <i class="fas fa-undo"></i> Restablecer Demo
                     </button>
                 </div>
-                <input type="file" id="importFileInput" accept=".json" style="display: none;">
+                <input type="file" id="importFileInput" accept=".json,.csv,.txt" style="display: none;">
             </div>
         </div>
 
