@@ -30,7 +30,7 @@ global.localStorage = {
 };
 
 // Evaluate app.js logic in global context
-eval(jsCode.replace(/^let clients =/m, 'var clients ='));
+eval(jsCode.replace(/^(let|const) (clients|searchQuery|currentFilter|currentStatusFilter|currentMonthFilter)/gm, 'var $2'));
 
 console.log('--- STARTING PALMARES AUTOMATED TEST SUITE ---');
 
@@ -47,7 +47,7 @@ function runTest(name, fn) {
     }
 }
 
-runTest('1. Schema Migration & Backward Compatibility', () => {
+runTest('1. Schema Migration & Backward Compatibility & Default Penalty Rate', () => {
     const oldClient = {
         id: 'c1',
         name: 'Test Client',
@@ -59,6 +59,36 @@ runTest('1. Schema Migration & Backward Compatibility', () => {
     assert(Array.isArray(oldClient.promises), 'promises array initialized');
     assert(Array.isArray(oldClient.payments), 'payments array initialized');
     assert.strictEqual(oldClient.installmentAmount, 100000);
+    assert.strictEqual(oldClient.penaltyRate, 0.32, 'default penalty rate should be 0.32');
+});
+
+runTest('9. Search Filter by Request Number (N° Solicitud)', () => {
+    const s1 = { id: 's1', name: 'Juan', requestNumber: '05', type: 'jubilado', paymentStatus: 'pending', paymentDay: 10 };
+    const s2 = { id: 's2', name: 'Pedro', requestNumber: '12', type: 'docente', paymentStatus: 'pending', paymentDay: 16 };
+    sanitizeClientSchema(s1);
+    sanitizeClientSchema(s2);
+
+    clients = [s1, s2];
+    searchQuery = '5';
+    currentFilter = 'all';
+    currentStatusFilter = 'all';
+    currentMonthFilter = 'all';
+    let res = getFilteredClients();
+    assert.strictEqual(res.length, 1);
+    assert.strictEqual(res[0].id, 's1');
+
+    searchQuery = '05';
+    res = getFilteredClients();
+    assert.strictEqual(res.length, 1);
+    assert.strictEqual(res[0].id, 's1');
+
+    searchQuery = '';
+});
+
+runTest('10. Calculation of Punitorios at 0.32% rate', () => {
+    // 100,000 cuota, 10 days overdue at 0.32% = 100,000 * 0.0032 * 10 = 3200
+    const punitorios = calculatePunitorios(100000, 10, 0.32);
+    assert.strictEqual(punitorios, 3200);
 });
 
 runTest('2. Unique Receipt Number Generator', () => {

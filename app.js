@@ -178,7 +178,7 @@ function sanitizeClientSchema(client) {
     if (!client.requestNumber) client.requestNumber = '';
     if (typeof client.installmentNumber !== 'number') client.installmentNumber = parseInt(client.installmentNumber) || 1;
     if (!client.totalInstallments) client.totalInstallments = 12;
-    if (client.penaltyRate === undefined || client.penaltyRate === null) client.penaltyRate = 1.0; // 1% per day default
+    if (client.penaltyRate === undefined || client.penaltyRate === null) client.penaltyRate = 0.32; // 0.32% per day default
     if (!client.periodMonth) client.periodMonth = getToday().substring(0, 7);
 
     if (!Array.isArray(client.gestiones)) client.gestiones = [];
@@ -252,7 +252,7 @@ function formatTwoDigitNumber(numStr) {
     return trimmed.padStart(2, '0').slice(-2);
 }
 
-function calculatePunitorios(installmentAmount, daysOverdue, penaltyRate = 1.0) {
+function calculatePunitorios(installmentAmount, daysOverdue, penaltyRate = 0.32) {
     if (!installmentAmount || daysOverdue <= 0 || !penaltyRate || penaltyRate <= 0) return 0;
     const dailyInterest = (installmentAmount * (penaltyRate / 100)) * daysOverdue;
     return Math.round(dailyInterest * 100) / 100;
@@ -311,7 +311,7 @@ function getDemoData() {
             requestNumber: '01',
             installmentNumber: 5,
             totalInstallments: 12,
-            penaltyRate: 1.0,
+            penaltyRate: 0.32,
             periodMonth: currentMonth,
             dni: '14.234.567',
             type: 'jubilado',
@@ -869,17 +869,31 @@ function getFilteredClients() {
     }
 
     if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        filtered = filtered.filter(c =>
-            c.name.toLowerCase().includes(q) ||
-            (c.branchNumber && c.branchNumber.toLowerCase().includes(q)) ||
-            (c.requestNumber && c.requestNumber.toLowerCase().includes(q)) ||
-            (c.installmentNumber && c.installmentNumber.toString().toLowerCase().includes(q)) ||
-            (c.dni && c.dni.toLowerCase().includes(q)) ||
-            (c.phone && c.phone.includes(q)) ||
-            (c.email && c.email.toLowerCase().includes(q)) ||
-            (c.notes && c.notes.toLowerCase().includes(q))
-        );
+        const q = searchQuery.toLowerCase().trim();
+        const numericQ = q.replace(/\D/g, '');
+        filtered = filtered.filter(c => {
+            const reqNum = (c.requestNumber || '').toString().trim().toLowerCase();
+            const reqNumNumeric = reqNum.replace(/\D/g, '');
+
+            let matchesRequestNumber = false;
+            if (reqNum) {
+                if (reqNum === q) {
+                    matchesRequestNumber = true;
+                } else if (numericQ !== '' && reqNumNumeric !== '') {
+                    matchesRequestNumber = parseInt(reqNumNumeric, 10) === parseInt(numericQ, 10);
+                }
+            }
+
+            return (
+                c.name.toLowerCase().includes(q) ||
+                matchesRequestNumber ||
+                (c.branchNumber && c.branchNumber.toLowerCase().includes(q)) ||
+                (c.dni && c.dni.toLowerCase().includes(q)) ||
+                (c.phone && c.phone.includes(q)) ||
+                (c.email && c.email.toLowerCase().includes(q)) ||
+                (c.notes && c.notes.toLowerCase().includes(q))
+            );
+        });
     }
 
     // Sort clients
@@ -1002,7 +1016,7 @@ function renderClientCard(client) {
     if (client.paymentStatus === 'overdue' && client.daysOverdue > 0) {
         overdueHtml = `<span class="overdue-badge"><i class="fas fa-clock"></i> ${client.daysOverdue} días de mora</span>`;
         if (punitorios > 0) {
-            overdueHtml += `<span class="penalty-badge" title="Interés punitorio por mora (${client.penaltyRate || 1.0}% diario)"><i class="fas fa-percent"></i> Punitorios: ${formatCurrency(punitorios)}</span>`;
+            overdueHtml += `<span class="penalty-badge" title="Interés punitorio por mora (${client.penaltyRate || 0.32}% diario)"><i class="fas fa-percent"></i> Punitorios: ${formatCurrency(punitorios)}</span>`;
         }
     }
 
@@ -1780,7 +1794,7 @@ function openAddModal() {
     els.requestNumber.value = '';
     els.installmentNumber.value = '1';
     els.totalInstallments.value = '12';
-    els.penaltyRate.value = '1.0';
+    els.penaltyRate.value = '0.32';
     els.periodMonth.value = getToday().substring(0, 7);
     els.clientDni.value = '';
     openModal(els.clientModal);
@@ -1800,7 +1814,7 @@ function editClient(id) {
     els.requestNumber.value = client.requestNumber || '';
     els.installmentNumber.value = client.installmentNumber || 1;
     els.totalInstallments.value = client.totalInstallments || 12;
-    els.penaltyRate.value = client.penaltyRate !== undefined ? client.penaltyRate : 1.0;
+    els.penaltyRate.value = client.penaltyRate !== undefined ? client.penaltyRate : 0.32;
     els.periodMonth.value = client.periodMonth || getToday().substring(0, 7);
     els.clientDni.value = client.dni || '';
     els.clientType.value = client.type;
@@ -1832,7 +1846,7 @@ function handleSaveClient(e) {
         requestNumber: formatRequestNumber(els.requestNumber.value),
         installmentNumber: parseInt(els.installmentNumber.value) || 1,
         totalInstallments: parseInt(els.totalInstallments.value) || 12,
-        penaltyRate: parseFloat(els.penaltyRate.value) >= 0 ? parseFloat(els.penaltyRate.value) : 1.0,
+        penaltyRate: parseFloat(els.penaltyRate.value) >= 0 ? parseFloat(els.penaltyRate.value) : 0.32,
         periodMonth: els.periodMonth.value || getToday().substring(0, 7),
         dni: els.clientDni.value.trim(),
         type: els.clientType.value,
@@ -1977,7 +1991,7 @@ function updatePaymentCalculationBox(client) {
     let html = `<div class="calc-row"><span>Importe Cuota:</span> <strong>${formatCurrency(baseCuota)}</strong></div>`;
 
     if (punitoriosGen > 0) {
-        html += `<div class="calc-row penalty"><span>Punitorios Generados (${daysOverdueVal} días, ${client.penaltyRate || 1.0}%/día):</span> <strong>+ ${formatCurrency(punitoriosGen)}</strong></div>`;
+        html += `<div class="calc-row penalty"><span>Punitorios Generados (${daysOverdueVal} días, ${client.penaltyRate || 0.32}%/día):</span> <strong>+ ${formatCurrency(punitoriosGen)}</strong></div>`;
         if (punitoriosWaived > 0) {
             html += `<div class="calc-row" style="color:var(--success);"><span>Punitorios Condonados/Bonificados:</span> <strong>- ${formatCurrency(punitoriosWaived)}</strong></div>`;
         }
@@ -2430,20 +2444,14 @@ function renderSummaryView() {
                 </div>
                 <ol class="summary-list">
                     ${groupClientsList.map((client) => {
-                        const status = STATUS_CONFIG[client.paymentStatus];
-                        const dniText = client.dni ? ` (DNI: ${escapeHtml(client.dni)})` : '';
-                        const branchText = client.branchNumber ? ` [Suc. N° ${escapeHtml(client.branchNumber)}]` : '';
-                        const reqText = client.requestNumber ? ` [Sol. N° ${escapeHtml(client.requestNumber)}]` : '';
-                        const instText = client.totalInstallments ? `${client.installmentNumber || 1}/${client.totalInstallments}` : `${client.installmentNumber || 1}`;
-                        const instNumText = ` [Cuota ${escapeHtml(instText)}]`;
-                        const monthText = client.periodMonth ? ` [Mes: ${escapeHtml(formatMonthYear(client.periodMonth))}]` : '';
-                        const installmentText = client.installmentAmount > 0 ? ` - Monto: ${formatCurrency(client.installmentAmount)}` : '';
+                        const dniTerm = getDniTermination(client.dni);
+                        const dniTermText = dniTerm !== null ? ` (Term. DNI: ${dniTerm})` : '';
+                        const payDayText = ` - Fecha de cobro: día ${client.paymentDay}`;
                         return `
                             <li class="summary-item">
                                 <div class="summary-item-content">
-                                    <span class="summary-item-name">${escapeHtml(client.name)}</span>${escapeHtml(branchText)}${escapeHtml(reqText)}${escapeHtml(instNumText)}${escapeHtml(monthText)}${escapeHtml(dniText)}${escapeHtml(installmentText)}
+                                    <span class="summary-item-name">${escapeHtml(client.name)}</span>${escapeHtml(dniTermText)}${escapeHtml(payDayText)}
                                 </div>
-                                <span class="summary-status-badge status-${client.paymentStatus}">${status.label}</span>
                             </li>
                         `;
                     }).join('')}
@@ -2469,15 +2477,10 @@ function copySummaryToClipboard() {
         const list = groups[type] || [];
         text += `${config.label}s (${list.length}):\n`;
         list.forEach((client, index) => {
-            const dniText = client.dni ? ` - DNI: ${client.dni}` : '';
-            const branchText = client.branchNumber ? ` - Suc. N°: ${client.branchNumber}` : '';
-            const reqText = client.requestNumber ? ` - Sol. N°: ${client.requestNumber}` : '';
-            const instText = client.totalInstallments ? `${client.installmentNumber || 1}/${client.totalInstallments}` : `${client.installmentNumber || 1}`;
-            const instNumText = ` - Cuota N°: ${instText}`;
-            const monthText = client.periodMonth ? ` - Mes: ${formatMonthYear(client.periodMonth)}` : '';
-            const statusLabel = STATUS_CONFIG[client.paymentStatus] ? STATUS_CONFIG[client.paymentStatus].label : '';
-            const installmentText = client.installmentAmount > 0 ? ` - Monto: ${formatCurrency(client.installmentAmount)}` : '';
-            text += `${index + 1}. ${client.name}${branchText}${reqText}${instNumText}${monthText}${dniText}${installmentText} [${statusLabel}]\n`;
+            const dniTerm = getDniTermination(client.dni);
+            const dniTermText = dniTerm !== null ? ` - Term. DNI: ${dniTerm}` : '';
+            const payDayText = ` - Fecha de cobro: día ${client.paymentDay}`;
+            text += `${index + 1}. ${client.name}${dniTermText}${payDayText}\n`;
         });
         text += '\n';
     });

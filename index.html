@@ -116,7 +116,7 @@
         <div class="toolbar">
             <div class="search-box">
                 <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="Buscar cliente..." aria-label="Buscar cliente">
+                <input type="text" id="searchInput" placeholder="Buscar por cliente, DNI, N° solicitud..." aria-label="Buscar cliente">
             </div>
             <button class="btn-filter" id="filterBtn" title="Filtros y opciones" aria-label="Abrir panel de filtros">
                 <i class="fas fa-filter"></i>
@@ -264,7 +264,7 @@
                     </div>
                     <div class="form-group flex-1">
                         <label for="penaltyRate">% Interés Punitorio Diario</label>
-                        <input type="number" id="penaltyRate" step="0.1" min="0" placeholder="Ej: 1.0" inputmode="decimal">
+                        <input type="number" id="penaltyRate" step="0.01" min="0" placeholder="Ej: 0.32" inputmode="decimal">
                         <span class="input-hint">Mora por día atrasado</span>
                     </div>
                 </div>
@@ -401,6 +401,8 @@
                         <div class="form-group flex-1">
                             <label for="autoPromiseMethod">Medio acordado</label>
                             <select id="autoPromiseMethod">
+                                <option value="Mercado Pago">Mercado Pago</option>
+                                <option value="Efectivo en sucursal">Efectivo en sucursal</option>
                                 <option value="Sucursal">Sucursal</option>
                                 <option value="Cobrador">Cobrador</option>
                                 <option value="Transferencia">Transferencia</option>
@@ -478,6 +480,8 @@
                     <div class="form-group flex-1">
                         <label for="promisePaymentMethod">Medio acordado *</label>
                         <select id="promisePaymentMethod" required>
+                            <option value="Mercado Pago">Mercado Pago</option>
+                            <option value="Efectivo en sucursal">Efectivo en sucursal</option>
                             <option value="Sucursal">Sucursal</option>
                             <option value="Cobrador">Cobrador</option>
                             <option value="Transferencia">Transferencia</option>
@@ -564,6 +568,8 @@
                         <label for="paymentMethodSelect">Medio de Pago *</label>
                         <select id="paymentMethodSelect" required>
                             <option value="Efectivo">Efectivo</option>
+                            <option value="Mercado Pago">Mercado Pago</option>
+                            <option value="Efectivo en sucursal">Efectivo en sucursal</option>
                             <option value="Transferencia">Transferencia</option>
                             <option value="Sucursal">Sucursal</option>
                             <option value="Cobrador">Cobrador</option>
@@ -727,6 +733,8 @@
                         <select id="histFilterMethod">
                             <option value="all">Todos</option>
                             <option value="Efectivo">Efectivo</option>
+                            <option value="Mercado Pago">Mercado Pago</option>
+                            <option value="Efectivo en sucursal">Efectivo en sucursal</option>
                             <option value="Transferencia">Transferencia</option>
                             <option value="Sucursal">Sucursal</option>
                             <option value="Cobrador">Cobrador</option>
