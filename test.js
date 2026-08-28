@@ -418,4 +418,44 @@ runTest('12. Non-Destructive Update of Client with Address and Official Fields',
     assert.strictEqual(updatedClient.payments.length, 1, 'Payment preserved');
 });
 
+runTest('13. Import Preview Modal Opens With .open Class', () => {
+    let previewModalClassList = [];
+    global.document.getElementById = (id) => {
+        if (id === 'importPreviewModal' || id === 'addressModal') {
+            return {
+                classList: {
+                    add: (cls) => previewModalClassList.push(cls),
+                    remove: (cls) => {
+                        previewModalClassList = previewModalClassList.filter(c => c !== cls);
+                    }
+                }
+            };
+        }
+        return {
+            value: '',
+            textContent: '',
+            style: {},
+            classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+            addEventListener: () => {},
+            appendChild: () => {},
+            innerHTML: ''
+        };
+    };
+
+    const mockPreviewData = {
+        parsedClients: [{ name: 'Test', installmentAmount: 1000, installmentNumber: 1, totalInstallments: 12 }],
+        totalRecords: 1,
+        recognizedCols: ['nombre'],
+        importedCols: ['nombre'],
+        ignoredCols: [],
+        errors: []
+    };
+
+    openImportPreviewModal(mockPreviewData);
+    assert(previewModalClassList.includes('open'), 'importPreviewModal received open class');
+
+    closeImportPreviewModal();
+    assert(!previewModalClassList.includes('open'), 'importPreviewModal removed open class');
+});
+
 console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);

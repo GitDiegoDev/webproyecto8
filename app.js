@@ -1269,12 +1269,13 @@ function openImportPreviewModal(previewData) {
         </div>
     `;
 
-    document.getElementById('importPreviewModal').classList.add('active');
+    const modal = document.getElementById('importPreviewModal');
+    if (modal) openModal(modal);
 }
 
 function closeImportPreviewModal() {
     const modal = document.getElementById('importPreviewModal');
-    if (modal) modal.classList.remove('active');
+    if (modal) closeModalFn(modal);
     pendingImportData = null;
     const fileInput = document.getElementById('importFileInput');
     if (fileInput) fileInput.value = '';
@@ -1946,12 +1947,13 @@ function openAddressModal(clientId) {
         </div>
     `;
 
-    document.getElementById('addressModal').classList.add('active');
+    const modal = document.getElementById('addressModal');
+    if (modal) openModal(modal);
 }
 
 function closeAddressModal() {
     const modal = document.getElementById('addressModal');
-    if (modal) modal.classList.remove('active');
+    if (modal) closeModalFn(modal);
     selectedAddressClient = null;
 }
 
