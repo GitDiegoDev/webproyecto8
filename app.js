@@ -110,8 +110,9 @@ async function loadClients() {
         saveClients();
     }
 
-    // Ensure schema migration for existing records
+    // Ensure schema migration for existing records and remove duplicates
     clients.forEach(c => sanitizeClientSchema(c));
+    deduplicateClients();
 
     // Run automatic overdue check
     updateOverdueStatuses();
@@ -179,6 +180,12 @@ function sanitizeClientSchema(client) {
     if (!client.requestNumber) client.requestNumber = '';
     if (typeof client.installmentNumber !== 'number') client.installmentNumber = parseInt(client.installmentNumber) || 1;
     if (!client.totalInstallments) client.totalInstallments = 12;
+
+    if (client.installmentNumber > client.totalInstallments) {
+        const minicuotaParsed = parseMinicuota(`${client.installmentNumber}/${client.totalInstallments}`);
+        client.installmentNumber = minicuotaParsed.currentInstallment;
+        client.totalInstallments = minicuotaParsed.totalInstallments;
+    }
     if (client.penaltyRate === undefined || client.penaltyRate === null) client.penaltyRate = 1.0; // 1% per day default
     if (!client.periodMonth) client.periodMonth = getToday().substring(0, 7);
 
@@ -866,14 +873,80 @@ function getClientUniqueKey(c) {
     const branch = formatBranchNumber(c.branchNumber);
     const req = formatRequestNumber(c.requestNumber);
     const period = (c.periodMonth || getToday().substring(0, 7)).trim();
-    const inst = c.installmentNumber || 1;
 
     if (dni || branch || req) {
-        return `${dni}_${branch}_${req}_${period}_${inst}`;
+        return `${dni}_${branch}_${req}_${period}`;
     }
     // Fallback if DNI/request numbers are absent
     const cleanName = (c.name || '').toLowerCase().trim().replace(/\s+/g, '_');
-    return `${cleanName}_${period}_${inst}`;
+    return `${cleanName}_${period}`;
+}
+
+function deduplicateClients() {
+    if (!Array.isArray(clients) || clients.length <= 1) return;
+
+    const map = new Map();
+    const uniqueClients = [];
+
+    clients.forEach(c => {
+        sanitizeClientSchema(c);
+        const key = getClientUniqueKey(c);
+        if (!key) {
+            uniqueClients.push(c);
+            return;
+        }
+
+        if (!map.has(key)) {
+            map.set(key, c);
+            uniqueClients.push(c);
+        } else {
+            const existing = map.get(key);
+
+            // Merge gestiones, promises, payments
+            if (Array.isArray(c.gestiones)) {
+                c.gestiones.forEach(g => {
+                    if (!existing.gestiones.some(eg => eg.id === g.id)) {
+                        existing.gestiones.push(g);
+                    }
+                });
+            }
+
+            if (Array.isArray(c.promises)) {
+                c.promises.forEach(pr => {
+                    if (!existing.promises.some(epr => epr.id === pr.id)) {
+                        existing.promises.push(pr);
+                    }
+                });
+            }
+
+            if (Array.isArray(c.payments)) {
+                c.payments.forEach(p => {
+                    if (!existing.payments.some(ep => ep.id === p.id)) {
+                        existing.payments.push(p);
+                    }
+                });
+            }
+
+            // Prefer valid and latest cuota number (installmentNumber <= totalInstallments)
+            if (c.totalInstallments) existing.totalInstallments = c.totalInstallments;
+            if (typeof c.installmentNumber === 'number' && c.installmentNumber <= c.totalInstallments) {
+                if (existing.installmentNumber > existing.totalInstallments || c.installmentNumber >= existing.installmentNumber) {
+                    existing.installmentNumber = c.installmentNumber;
+                }
+            }
+
+            // Update fields if existing has empty/missing ones
+            if (!existing.phone && c.phone) existing.phone = c.phone;
+            if (!existing.celular && c.celular) existing.celular = c.celular;
+            if (!existing.domicilio && c.domicilio) existing.domicilio = c.domicilio;
+            if (!existing.localidad && c.localidad) existing.localidad = c.localidad;
+            if (!existing.zona && c.zona) existing.zona = c.zona;
+            if (!existing.cpos && c.cpos) existing.cpos = c.cpos;
+            if (!existing.garante && c.garante) existing.garante = c.garante;
+        }
+    });
+
+    clients = uniqueClients;
 }
 
 function parseMinicuota(value) {
@@ -881,19 +954,53 @@ function parseMinicuota(value) {
         return { currentInstallment: 1, totalInstallments: 12 };
     }
     const valStr = value.toString().trim();
-    if (valStr.includes('/')) {
-        const parts = valStr.split('/');
-        const curr = parseInt(parts[0].replace(/\D/g, ''), 10);
-        const tot = parseInt(parts[1].replace(/\D/g, ''), 10);
-        return {
-            currentInstallment: isNaN(curr) || curr <= 0 ? 1 : curr,
-            totalInstallments: isNaN(tot) || tot <= 0 ? 12 : tot
-        };
+    if (!valStr) {
+        return { currentInstallment: 1, totalInstallments: 12 };
     }
-    const num = parseInt(valStr.replace(/\D/g, ''), 10);
+
+    let curr = 1;
+    let tot = 12;
+
+    if (valStr.includes('/')) {
+        const parts = valStr.split('/').map(p => p.trim());
+        if (parts.length >= 3) {
+            curr = parseInt(parts[0].replace(/\D/g, ''), 10);
+            tot = parseInt(parts[1].replace(/\D/g, ''), 10);
+        } else {
+            curr = parseInt(parts[0].replace(/\D/g, ''), 10);
+            tot = parseInt(parts[1].replace(/\D/g, ''), 10);
+            if (isNaN(tot) || tot <= 0) tot = 12;
+
+            if (!isNaN(curr) && curr > tot) {
+                const currStr = parts[0].replace(/\D/g, '');
+                if (currStr.length >= 2) {
+                    const firstDigit = parseInt(currStr.slice(0, 1), 10);
+                    const restDigits = parseInt(currStr.slice(1), 10);
+                    if (!isNaN(firstDigit) && !isNaN(restDigits) && firstDigit <= restDigits) {
+                        curr = firstDigit;
+                        tot = restDigits;
+                    } else if (!isNaN(firstDigit) && firstDigit <= tot) {
+                        curr = firstDigit;
+                    }
+                }
+            }
+        }
+    } else {
+        const num = parseInt(valStr.replace(/\D/g, ''), 10);
+        curr = isNaN(num) || num <= 0 ? 1 : num;
+        tot = 12;
+    }
+
+    if (isNaN(curr) || curr <= 0) curr = 1;
+    if (isNaN(tot) || tot <= 0) tot = 12;
+
+    if (curr > tot) {
+        curr = tot;
+    }
+
     return {
-        currentInstallment: isNaN(num) || num <= 0 ? 1 : num,
-        totalInstallments: 12
+        currentInstallment: curr,
+        totalInstallments: tot
     };
 }
 

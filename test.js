@@ -306,7 +306,7 @@ runTest('9. Portfolio Import Merge Preserves Gestiones, Promises & Payments', ()
     assert.strictEqual(clients[0].payments.length, 1, 'Payments preserved');
 });
 
-runTest('10. Minicuota Parsing Logic', () => {
+runTest('10. Minicuota Parsing Logic & Malformed Quota Sanitization', () => {
     const res1 = parseMinicuota('7/9');
     assert.strictEqual(res1.currentInstallment, 7);
     assert.strictEqual(res1.totalInstallments, 9);
@@ -318,6 +318,52 @@ runTest('10. Minicuota Parsing Logic', () => {
     const res3 = parseMinicuota('5');
     assert.strictEqual(res3.currentInstallment, 5);
     assert.strictEqual(res3.totalInstallments, 12);
+
+    // Malformed/impossible values like in user screenshot (59/12, 612/12)
+    const res4 = parseMinicuota('59/12');
+    assert.strictEqual(res4.currentInstallment, 5);
+    assert.strictEqual(res4.totalInstallments, 9);
+
+    const res5 = parseMinicuota('612/12');
+    assert.strictEqual(res5.currentInstallment, 6);
+    assert.strictEqual(res5.totalInstallments, 12);
+});
+
+runTest('14. Client Deduplication & Malformed Cuota Clean-Up', () => {
+    clients = [
+        {
+            id: 'd1',
+            name: 'Gismondi Eugenia Carolina',
+            dni: '30.111.222',
+            branchNumber: '66',
+            requestNumber: '16',
+            installmentNumber: 59,
+            totalInstallments: 12,
+            periodMonth: '2026-08',
+            paymentStatus: 'pending',
+            gestiones: [{ id: 'g_gis', result: 'Contactado' }]
+        },
+        {
+            id: 'd2',
+            name: 'Gismondi Eugenia Carolina',
+            dni: '30.111.222',
+            branchNumber: '66',
+            requestNumber: '16',
+            installmentNumber: 6,
+            totalInstallments: 9,
+            periodMonth: '2026-08',
+            paymentStatus: 'pending',
+            gestiones: [{ id: 'g_gis_2', result: 'Prometió pagar' }]
+        }
+    ];
+
+    clients.forEach(c => sanitizeClientSchema(c));
+    deduplicateClients();
+
+    assert.strictEqual(clients.length, 1, 'Duplicate client records merged into 1');
+    assert.strictEqual(clients[0].installmentNumber, 6, 'Cuota 6/9 merged correctly');
+    assert.strictEqual(clients[0].totalInstallments, 9);
+    assert.strictEqual(clients[0].gestiones.length, 2, 'Gestiones from duplicate merged');
 });
 
 runTest('11. Official Spreadsheet Column Mapping & Address Storage', () => {
