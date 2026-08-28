@@ -306,4 +306,116 @@ runTest('9. Portfolio Import Merge Preserves Gestiones, Promises & Payments', ()
     assert.strictEqual(clients[0].payments.length, 1, 'Payments preserved');
 });
 
+runTest('10. Minicuota Parsing Logic', () => {
+    const res1 = parseMinicuota('7/9');
+    assert.strictEqual(res1.currentInstallment, 7);
+    assert.strictEqual(res1.totalInstallments, 9);
+
+    const res2 = parseMinicuota(' 3 / 12 ');
+    assert.strictEqual(res2.currentInstallment, 3);
+    assert.strictEqual(res2.totalInstallments, 12);
+
+    const res3 = parseMinicuota('5');
+    assert.strictEqual(res3.currentInstallment, 5);
+    assert.strictEqual(res3.totalInstallments, 12);
+});
+
+runTest('11. Official Spreadsheet Column Mapping & Address Storage', () => {
+    const mockRow = {
+        'sucursal': '01',
+        'solicitud': '1005',
+        'sigla': 'PF',
+        'apellido': 'GARCIA',
+        'apenom': 'JUAN CARLOS',
+        'empresas': 'EMP1',
+        'empresasd': '',
+        'empresaslo': '',
+        'empresaste': '',
+        'segmento': 'JUBILADO',
+        'domicilio': 'Av. San Martin 123',
+        'teléfono': '3755401122',
+        'celular': '3755152233',
+        'zona': 'Centro',
+        'localidad': 'Oberá',
+        'CPOs': '3360',
+        'debe': '0',
+        'haber': '0',
+        'vencido': '12500,50',
+        'punitorios': '125,00',
+        'vence': '2026-08-15',
+        'minicuota': '7/9',
+        'día pago': '10',
+        'CBU': '01100...',
+        'nro documento': '33445566',
+        'garante': 'Perez Maria'
+    };
+
+    const { parsedClients, recognizedCols, ignoredCols } = parseOfficialSpreadsheetRows([mockRow]);
+
+    assert.strictEqual(parsedClients.length, 1);
+    const c = parsedClients[0];
+    assert.strictEqual(c.branchNumber, '01');
+    assert.strictEqual(c.requestNumber, '1005');
+    assert.strictEqual(c.name, 'GARCIA JUAN CARLOS');
+    assert.strictEqual(c.type, 'jubilado');
+    assert.strictEqual(c.domicilio, 'Av. San Martin 123');
+    assert.strictEqual(c.localidad, 'Oberá');
+    assert.strictEqual(c.cpos, '3360');
+    assert.strictEqual(c.zona, 'Centro');
+    assert.strictEqual(c.installmentAmount, 12500.50);
+    assert.strictEqual(c.installmentNumber, 7);
+    assert.strictEqual(c.totalInstallments, 9);
+    assert.strictEqual(c.dni, '33445566');
+    assert.strictEqual(c.garante, 'Perez Maria');
+
+    assert(recognizedCols.some(k => k.toLowerCase().includes('sucursal')));
+    assert(ignoredCols.some(k => k.toLowerCase().includes('debe')));
+    assert(ignoredCols.some(k => k.toLowerCase().includes('sigla')));
+});
+
+runTest('12. Non-Destructive Update of Client with Address and Official Fields', () => {
+    const existing = {
+        id: 'c_existing_addr',
+        name: 'GARCIA JUAN CARLOS',
+        dni: '33445566',
+        branchNumber: '01',
+        requestNumber: '1005',
+        installmentNumber: 7,
+        totalInstallments: 9,
+        periodMonth: getToday().substring(0, 7),
+        domicilio: 'Calle Antigua 100',
+        gestiones: [{ id: 'g_saved', type: 'Visita del cobrador' }],
+        promises: [{ id: 'pr_saved', status: 'pendiente' }],
+        payments: [{ id: 'pay_saved', amount: 5000 }]
+    };
+    sanitizeClientSchema(existing);
+    clients = [existing];
+
+    const imported = [{
+        name: 'GARCIA JUAN CARLOS',
+        dni: '33445566',
+        branchNumber: '01',
+        requestNumber: '1005',
+        installmentNumber: 7,
+        totalInstallments: 9,
+        periodMonth: getToday().substring(0, 7),
+        domicilio: 'Av. San Martin 123 (Nueva)',
+        localidad: 'Oberá',
+        cpos: '3360',
+        zona: 'Centro',
+        installmentAmount: 12500.50
+    }];
+
+    const { updatedCount, addedCount } = mergeMonthlyPortfolio(imported);
+    assert.strictEqual(updatedCount, 1);
+    assert.strictEqual(addedCount, 0);
+
+    const updatedClient = clients[0];
+    assert.strictEqual(updatedClient.domicilio, 'Av. San Martin 123 (Nueva)');
+    assert.strictEqual(updatedClient.localidad, 'Oberá');
+    assert.strictEqual(updatedClient.gestiones.length, 1, 'Gestión preserved');
+    assert.strictEqual(updatedClient.promises.length, 1, 'Promise preserved');
+    assert.strictEqual(updatedClient.payments.length, 1, 'Payment preserved');
+});
+
 console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);

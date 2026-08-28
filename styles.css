@@ -1611,10 +1611,82 @@ form {
     background: #fef3c7;
 }
 
+.btn-card-action.btn-action-address {
+    color: #15803d;
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+}
+.btn-card-action.btn-action-address:hover {
+    background: #dcfce7;
+}
+
 .btn-card-action.btn-action-history {
     color: #475569;
     border-color: #cbd5e1;
     background: #f8fafc;
+}
+
+/* Address details card & modal */
+.address-details-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 1rem;
+}
+
+.address-header-info {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.address-header-info h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.1rem;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.address-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+}
+
+.address-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.6rem;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+
+.address-item.full-width {
+    grid-column: 1 / -1;
+}
+
+.addr-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.addr-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.addr-value.highlight {
+    color: var(--primary);
+    font-size: 1.05rem;
 }
 
 .promise-badge-card {

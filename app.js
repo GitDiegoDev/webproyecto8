@@ -182,6 +182,16 @@ function sanitizeClientSchema(client) {
     if (client.penaltyRate === undefined || client.penaltyRate === null) client.penaltyRate = 1.0; // 1% per day default
     if (!client.periodMonth) client.periodMonth = getToday().substring(0, 7);
 
+    if (!client.domicilio) client.domicilio = '';
+    if (!client.localidad) client.localidad = '';
+    if (!client.cpos) client.cpos = '';
+    if (!client.zona) client.zona = '';
+    if (!client.garante) client.garante = '';
+    if (!client.apellido) client.apellido = '';
+    if (!client.apenom) client.apenom = '';
+    if (!client.phone) client.phone = client.celular || '';
+    if (!client.celular) client.celular = client.phone || '';
+
     if (!Array.isArray(client.gestiones)) client.gestiones = [];
     if (!Array.isArray(client.promises)) client.promises = [];
     if (!Array.isArray(client.payments)) client.payments = [];
@@ -271,7 +281,10 @@ function formatMonthYear(yyyyMm) {
 }
 
 function formatRequestNumber(numStr) {
-    return formatTwoDigitNumber(numStr);
+    if (!numStr) return '';
+    const trimmed = numStr.toString().trim().replace(/\D/g, '');
+    if (!trimmed) return '';
+    return trimmed.length === 1 ? '0' + trimmed : trimmed;
 }
 
 function formatBranchNumber(numStr) {
@@ -863,6 +876,201 @@ function getClientUniqueKey(c) {
     return `${cleanName}_${period}_${inst}`;
 }
 
+function parseMinicuota(value) {
+    if (value === null || value === undefined) {
+        return { currentInstallment: 1, totalInstallments: 12 };
+    }
+    const valStr = value.toString().trim();
+    if (valStr.includes('/')) {
+        const parts = valStr.split('/');
+        const curr = parseInt(parts[0].replace(/\D/g, ''), 10);
+        const tot = parseInt(parts[1].replace(/\D/g, ''), 10);
+        return {
+            currentInstallment: isNaN(curr) || curr <= 0 ? 1 : curr,
+            totalInstallments: isNaN(tot) || tot <= 0 ? 12 : tot
+        };
+    }
+    const num = parseInt(valStr.replace(/\D/g, ''), 10);
+    return {
+        currentInstallment: isNaN(num) || num <= 0 ? 1 : num,
+        totalInstallments: 12
+    };
+}
+
+function getRowValue(row, keywords) {
+    if (!row || typeof row !== 'object') return '';
+    const keys = Object.keys(row);
+    for (const kw of keywords) {
+        const matchKey = keys.find(k => k.toLowerCase().trim() === kw.toLowerCase().trim());
+        if (matchKey && row[matchKey] !== undefined && row[matchKey] !== null) {
+            return row[matchKey].toString().trim();
+        }
+    }
+    for (const kw of keywords) {
+        const matchKey = keys.find(k => k.toLowerCase().trim().includes(kw.toLowerCase().trim()));
+        if (matchKey && row[matchKey] !== undefined && row[matchKey] !== null) {
+            return row[matchKey].toString().trim();
+        }
+    }
+    return '';
+}
+
+function parseOfficialSpreadsheetRows(rowsData) {
+    const parsedClients = [];
+    const errors = [];
+    const recognizedColsSet = new Set();
+    const ignoredColsSet = new Set();
+
+    const OFFICIAL_MAPPED_KEYS = [
+        'sucursal', 'solicitud', 'apellido', 'apenom', 'segmento',
+        'domicilio', 'teléfono', 'telefono', 'celular', 'zona', 'localidad',
+        'cpos', 'vencido', 'punitorios', 'vence', 'minicuota', 'día pago',
+        'dia pago', 'nro documento', 'garante'
+    ];
+
+    if (rowsData.length > 0) {
+        const sampleKeys = Object.keys(rowsData[0]);
+        sampleKeys.forEach(key => {
+            const cleanK = key.toLowerCase().trim();
+            if (OFFICIAL_MAPPED_KEYS.some(k => cleanK.includes(k))) {
+                recognizedColsSet.add(key);
+            } else {
+                ignoredColsSet.add(key);
+            }
+        });
+    }
+
+    rowsData.forEach((row, idx) => {
+        const rowNum = idx + 2;
+
+        const sucursal = formatBranchNumber(getRowValue(row, ['sucursal', 'suc']));
+        const solicitud = formatRequestNumber(getRowValue(row, ['solicitud', 'operacion', 'operación', 'nro solicitud']));
+        const apellido = getRowValue(row, ['apellido']);
+        const apenom = getRowValue(row, ['apenom', 'nombre', 'cliente']);
+        const segmento = getRowValue(row, ['segmento', 'tipo', 'categoria']);
+        const domicilio = getRowValue(row, ['domicilio', 'direccion', 'dirección']);
+        const telefono = getRowValue(row, ['teléfono', 'telefono', 'tel']);
+        const celular = getRowValue(row, ['celular', 'cel']);
+        const zona = getRowValue(row, ['zona']);
+        const localidad = getRowValue(row, ['localidad', 'ciudad']);
+        const cpos = getRowValue(row, ['cpos', 'cpo', 'cp', 'código postal', 'codigo postal']);
+        const vencidoRaw = getRowValue(row, ['vencido', 'monto cuota', 'monto_cuota', 'monto', 'importe']);
+        const punitoriosRaw = getRowValue(row, ['punitorios', 'punitorio']);
+        const venceRaw = getRowValue(row, ['vence', 'vencimiento', 'fecha vence']);
+        const minicuotaRaw = getRowValue(row, ['minicuota', 'cuota']);
+        const diaPagoRaw = getRowValue(row, ['día pago', 'dia pago', 'dia_pago', 'día_pago', 'sueldo']);
+        const dniRaw = getRowValue(row, ['nro documento', 'nro_documento', 'documento', 'dni']);
+        const garante = getRowValue(row, ['garante']);
+
+        if (!dniRaw && !solicitud && !apenom && !apellido) {
+            errors.push(`Fila ${rowNum}: Falta DNI, N.º de solicitud y nombre.`);
+            return;
+        }
+
+        const dni = dniRaw.replace(/\D/g, '');
+        const { currentInstallment, totalInstallments } = parseMinicuota(minicuotaRaw);
+
+        let name = '';
+        if (apellido && apenom) {
+            if (apenom.toUpperCase().includes(apellido.toUpperCase())) {
+                name = apenom;
+            } else {
+                name = `${apellido} ${apenom}`;
+            }
+        } else {
+            name = apenom || apellido || `Cliente DNI ${dni}`;
+        }
+
+        let type = 'privado';
+        const segLower = (segmento || '').toLowerCase();
+        if (segLower.includes('jubilad')) type = 'jubilado';
+        else if (segLower.includes('docent')) type = 'docente';
+        else if (segLower.includes('polic')) type = 'policia';
+        else if (segLower.includes('municip')) type = 'municipal';
+        else if (segLower.includes('provin')) type = 'provincial';
+
+        let salaryDay = parseInt(diaPagoRaw, 10);
+        if (isNaN(salaryDay) || salaryDay < 1 || salaryDay > 31) salaryDay = 10;
+
+        let paymentDay = salaryDay;
+        if (venceRaw) {
+            const dayMatch = venceRaw.match(/\b([0-2]?[0-9]|3[01])\b/);
+            if (dayMatch) {
+                const d = parseInt(dayMatch[1], 10);
+                if (d >= 1 && d <= 31) paymentDay = d;
+            }
+        }
+
+        const installmentAmount = parseCurrencyInput(vencidoRaw);
+        const punitorios = parseCurrencyInput(punitoriosRaw);
+
+        const newC = {
+            id: generateId(),
+            name: name,
+            apellido: apellido,
+            apenom: apenom,
+            dni: dni,
+            branchNumber: sucursal,
+            requestNumber: solicitud,
+            installmentNumber: currentInstallment,
+            totalInstallments: totalInstallments,
+            periodMonth: getToday().substring(0, 7),
+            segmento: segmento,
+            type: type,
+            domicilio: domicilio,
+            localidad: localidad,
+            cpos: cpos,
+            zona: zona,
+            phone: telefono || celular,
+            celular: celular || telefono,
+            garante: garante,
+            salaryDay: salaryDay,
+            paymentDay: paymentDay,
+            installmentAmount: installmentAmount,
+            punitorios: punitorios,
+            vence: venceRaw,
+            loanAmount: 0,
+            notes: '',
+            paymentStatus: 'pending',
+            isOverdue: false,
+            daysOverdue: 0,
+            lastPaymentDate: '',
+            gestiones: [],
+            promises: [],
+            payments: []
+        };
+
+        sanitizeClientSchema(newC);
+        parsedClients.push(newC);
+    });
+
+    return {
+        parsedClients,
+        totalRecords: rowsData.length,
+        recognizedCols: Array.from(recognizedColsSet),
+        importedCols: [
+            'Sucursal (sucursal)',
+            'N.º Solicitud (solicitud)',
+            'Apellido y Nombre (apellido / apenom)',
+            'Segmento (segmento)',
+            'Dirección (domicilio)',
+            'Teléfono / Celular (teléfono / celular)',
+            'Zona (zona)',
+            'Localidad (localidad)',
+            'Código Postal (CPOs)',
+            'Importe Vencido (vencido)',
+            'Punitorios (punitorios)',
+            'Fecha Vencimiento (vence)',
+            'Cuota Actual y Totales (minicuota p.ej. 7/9)',
+            'Día de Pago (día pago)',
+            'DNI / Documento (nro documento)',
+            'Garante (garante)'
+        ],
+        ignoredCols: Array.from(ignoredColsSet),
+        errors
+    };
+}
+
 function parseCSVToClients(csvText) {
     const lines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
     if (lines.length < 2) return [];
@@ -952,6 +1160,126 @@ function parseCSVToClients(csvText) {
     return parsedClients;
 }
 
+let pendingImportData = null;
+
+function openImportPreviewModal(previewData) {
+    pendingImportData = previewData;
+
+    const {
+        parsedClients,
+        totalRecords,
+        recognizedCols,
+        importedCols,
+        ignoredCols,
+        errors
+    } = previewData;
+
+    let updatedCount = 0;
+    let newCount = 0;
+
+    parsedClients.forEach(importedItem => {
+        const key = getClientUniqueKey(importedItem);
+        if (clients.some(c => getClientUniqueKey(c) === key)) {
+            updatedCount++;
+        } else {
+            newCount++;
+        }
+    });
+
+    const bodyEl = document.getElementById('importPreviewBody');
+    if (!bodyEl) return;
+
+    let sampleRowsHtml = '';
+    const sampleList = parsedClients.slice(0, 5);
+    sampleList.forEach((c) => {
+        const fullAddr = [c.domicilio, c.localidad, c.zona].filter(Boolean).join(', ') || '-';
+        sampleRowsHtml += `
+            <tr>
+                <td><strong>${escapeHtml(c.name)}</strong><br><small>DNI: ${escapeHtml(c.dni || '-')}</small></td>
+                <td>Suc. ${escapeHtml(c.branchNumber || '-')}<br>Sol. ${escapeHtml(c.requestNumber || '-')}</td>
+                <td><span class="badge badge-installment">Cuota ${c.installmentNumber} de ${c.totalInstallments}</span></td>
+                <td>${formatCurrency(c.installmentAmount)}</td>
+                <td><small><i class="fas fa-map-marker-alt"></i> ${escapeHtml(fullAddr)}</small></td>
+            </tr>
+        `;
+    });
+
+    let errorsHtml = '';
+    if (errors && errors.length > 0) {
+        errorsHtml = `
+            <div class="alert-box alert-warning" style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.4); border-radius: 8px;">
+                <h4 style="margin:0 0 0.5rem 0; color: #facc15;"><i class="fas fa-exclamation-triangle"></i> Posibles Advertencias / Filas Omitidas (${errors.length}):</h4>
+                <ul style="margin: 0; padding-left: 1.25rem; font-size: 0.85rem;">
+                    ${errors.slice(0, 5).map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                    ${errors.length > 5 ? `<li>...y ${errors.length - 5} advertencias más</li>` : ''}
+                </ul>
+            </div>
+        `;
+    }
+
+    bodyEl.innerHTML = `
+        <div class="preview-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem;">
+            <div class="stat-card" style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; text-align: center;">
+                <span class="stat-num" style="display:block; font-size: 1.4rem; font-weight: 700;">${totalRecords}</span>
+                <span class="stat-lbl" style="font-size: 0.75rem; opacity: 0.8;">Encontrados</span>
+            </div>
+            <div class="stat-card" style="background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); padding: 0.75rem; border-radius: 8px; text-align: center;">
+                <span class="stat-num text-success" style="display:block; font-size: 1.4rem; font-weight: 700; color: #4ade80;">${newCount}</span>
+                <span class="stat-lbl" style="font-size: 0.75rem; opacity: 0.8;">Nuevos</span>
+            </div>
+            <div class="stat-card" style="background: rgba(14,165,233,0.1); border: 1px solid rgba(14,165,233,0.3); padding: 0.75rem; border-radius: 8px; text-align: center;">
+                <span class="stat-num text-info" style="display:block; font-size: 1.4rem; font-weight: 700; color: #38bdf8;">${updatedCount}</span>
+                <span class="stat-lbl" style="font-size: 0.75rem; opacity: 0.8;">A actualizar</span>
+            </div>
+            <div class="stat-card" style="background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.3); padding: 0.75rem; border-radius: 8px; text-align: center;">
+                <span class="stat-num text-warning" style="display:block; font-size: 1.4rem; font-weight: 700; color: #facc15;">${errors ? errors.length : 0}</span>
+                <span class="stat-lbl" style="font-size: 0.75rem; opacity: 0.8;">Advertencias</span>
+            </div>
+        </div>
+
+        ${errorsHtml}
+
+        <div class="cols-breakdown-box" style="margin-bottom: 1.25rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px;">
+            <h3 style="font-size: 0.95rem; margin-top: 0; margin-bottom: 0.5rem;"><i class="fas fa-columns"></i> Análisis de Columnas</h3>
+            <div class="cols-detail" style="font-size: 0.85rem; line-height: 1.5;">
+                <p style="margin: 0.25rem 0;"><strong><i class="fas fa-check-circle text-success" style="color:#4ade80;"></i> Columnas Reconocidas (${recognizedCols.length}):</strong> ${recognizedCols.map(c => `<code style="background:rgba(255,255,255,0.1); padding:2px 5px; border-radius:3px;">${escapeHtml(c)}</code>`).join(', ') || 'Ninguna'}</p>
+                <p style="margin: 0.25rem 0;"><strong><i class="fas fa-download text-primary" style="color:#38bdf8;"></i> Datos que serán Importados:</strong> ${importedCols.join(', ')}</p>
+                <p style="margin: 0.25rem 0;"><strong><i class="fas fa-eye-slash text-muted" style="opacity:0.6;"></i> Columnas Ignoradas (${ignoredCols.length}):</strong> ${ignoredCols.map(c => `<code style="background:rgba(255,255,255,0.05); padding:2px 5px; border-radius:3px; opacity:0.7;">${escapeHtml(c)}</code>`).join(', ') || 'Ninguna (debe, haber, sigla, empresas, etc.)'}</p>
+            </div>
+        </div>
+
+        <div class="sample-table-box">
+            <h3 style="font-size: 0.95rem; margin-top: 0; margin-bottom: 0.5rem;"><i class="fas fa-table"></i> Vista Previa (Muestra de primeros ${sampleList.length} registros)</h3>
+            <div class="history-table-container">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Cliente / DNI</th>
+                            <th>Suc / Solicitud</th>
+                            <th>Cuota ("minicuota")</th>
+                            <th>Importe Vencido</th>
+                            <th>Ubicación</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sampleRowsHtml || '<tr><td colspan="5">No hay muestra para visualizar</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('importPreviewModal').classList.add('active');
+}
+
+function closeImportPreviewModal() {
+    const modal = document.getElementById('importPreviewModal');
+    if (modal) modal.classList.remove('active');
+    pendingImportData = null;
+    const fileInput = document.getElementById('importFileInput');
+    if (fileInput) fileInput.value = '';
+}
+
 function mergeMonthlyPortfolio(importedList) {
     let updatedCount = 0;
     let addedCount = 0;
@@ -966,21 +1294,32 @@ function mergeMonthlyPortfolio(importedList) {
             const existing = clients[existingIndex];
 
             // Update official system fields ONLY
-            existing.name = importedItem.name || existing.name;
-            existing.branchNumber = importedItem.branchNumber || existing.branchNumber;
-            existing.requestNumber = importedItem.requestNumber || existing.requestNumber;
-            existing.installmentNumber = importedItem.installmentNumber || existing.installmentNumber;
-            existing.totalInstallments = importedItem.totalInstallments || existing.totalInstallments;
-            existing.periodMonth = importedItem.periodMonth || existing.periodMonth;
-            existing.penaltyRate = importedItem.penaltyRate !== undefined ? importedItem.penaltyRate : existing.penaltyRate;
-            existing.dni = importedItem.dni || existing.dni;
-            existing.type = importedItem.type || existing.type;
-            existing.salaryDay = importedItem.salaryDay || existing.salaryDay;
-            existing.paymentDay = importedItem.paymentDay || existing.paymentDay;
-            existing.loanAmount = importedItem.loanAmount || existing.loanAmount;
-            existing.installmentAmount = importedItem.installmentAmount || existing.installmentAmount;
-            existing.phone = importedItem.phone || existing.phone;
-            existing.email = importedItem.email || existing.email;
+            if (importedItem.name) existing.name = importedItem.name;
+            if (importedItem.apellido) existing.apellido = importedItem.apellido;
+            if (importedItem.apenom) existing.apenom = importedItem.apenom;
+            if (importedItem.branchNumber) existing.branchNumber = importedItem.branchNumber;
+            if (importedItem.requestNumber) existing.requestNumber = importedItem.requestNumber;
+            if (importedItem.installmentNumber) existing.installmentNumber = importedItem.installmentNumber;
+            if (importedItem.totalInstallments) existing.totalInstallments = importedItem.totalInstallments;
+            if (importedItem.periodMonth) existing.periodMonth = importedItem.periodMonth;
+            if (importedItem.type) existing.type = importedItem.type;
+            if (importedItem.segmento) existing.segmento = importedItem.segmento;
+            if (importedItem.domicilio) existing.domicilio = importedItem.domicilio;
+            if (importedItem.localidad) existing.localidad = importedItem.localidad;
+            if (importedItem.cpos) existing.cpos = importedItem.cpos;
+            if (importedItem.zona) existing.zona = importedItem.zona;
+            if (importedItem.phone) existing.phone = importedItem.phone;
+            if (importedItem.celular) existing.celular = importedItem.celular;
+            if (importedItem.garante) existing.garante = importedItem.garante;
+            if (importedItem.installmentAmount !== undefined && importedItem.installmentAmount > 0) {
+                existing.installmentAmount = importedItem.installmentAmount;
+            }
+            if (importedItem.punitorios !== undefined) existing.punitorios = importedItem.punitorios;
+            if (importedItem.vence) existing.vence = importedItem.vence;
+            if (importedItem.salaryDay) existing.salaryDay = importedItem.salaryDay;
+            if (importedItem.paymentDay) existing.paymentDay = importedItem.paymentDay;
+            if (importedItem.dni) existing.dni = importedItem.dni;
+
             if (importedItem.notes && !existing.notes.includes(importedItem.notes)) {
                 existing.notes = (existing.notes ? existing.notes + ' | ' : '') + importedItem.notes;
             }
@@ -1004,29 +1343,98 @@ function mergeMonthlyPortfolio(importedList) {
 }
 
 function importData(file) {
+    if (!file) return;
+
+    const fileName = file.name.toLowerCase();
+    const isExcel = fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
+    const isCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt');
+    const isJson = fileName.endsWith('.json');
+
     const reader = new FileReader();
-    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.txt');
 
-    reader.onload = (e) => {
-        try {
-            let importedItems = [];
-            if (isCsv) {
-                importedItems = parseCSVToClients(e.target.result);
-                if (importedItems.length === 0) {
-                    throw new Error('No se encontraron registros válidos en la planilla CSV.');
+    if (isExcel) {
+        reader.onload = (e) => {
+            try {
+                if (typeof XLSX === 'undefined') {
+                    throw new Error('Librería XLSX no disponible');
                 }
-            } else {
-                const parsed = JSON.parse(e.target.result);
-                importedItems = Array.isArray(parsed) ? parsed : [parsed];
-            }
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                const firstSheetName = workbook.SheetNames[0];
+                const firstSheet = workbook.Sheets[firstSheetName];
+                const rowsData = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
 
-            const { updatedCount, addedCount } = mergeMonthlyPortfolio(importedItems);
-            showToast(`Importación completada: ${updatedCount} actualizados, ${addedCount} nuevos agregados. ¡Datos de gestión preservados!`, 'success');
-        } catch (err) {
-            showToast('Error al importar la planilla: ' + err.message, 'error');
-        }
-    };
-    reader.readAsText(file);
+                if (!rowsData || rowsData.length === 0) {
+                    throw new Error('La planilla Excel está vacía.');
+                }
+
+                const previewData = parseOfficialSpreadsheetRows(rowsData);
+                if (previewData.parsedClients.length === 0) {
+                    throw new Error('No se encontraron registros válidos en la planilla Excel.');
+                }
+
+                openImportPreviewModal(previewData);
+            } catch (err) {
+                showToast('Error al procesar la planilla Excel: ' + err.message, 'error');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } else if (isCsv) {
+        reader.onload = (e) => {
+            try {
+                let previewData;
+                if (typeof XLSX !== 'undefined') {
+                    const workbook = XLSX.read(e.target.result, { type: 'string' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rowsData = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+                    previewData = parseOfficialSpreadsheetRows(rowsData);
+                } else {
+                    const clientsList = parseCSVToClients(e.target.result);
+                    previewData = {
+                        parsedClients: clientsList,
+                        totalRecords: clientsList.length,
+                        recognizedCols: ['nombre', 'dni', 'sucursal', 'solicitud', 'cuota', 'monto'],
+                        importedCols: ['Datos de cliente CSV'],
+                        ignoredCols: [],
+                        errors: []
+                    };
+                }
+
+                if (!previewData.parsedClients || previewData.parsedClients.length === 0) {
+                    throw new Error('No se encontraron registros válidos en el archivo CSV.');
+                }
+
+                openImportPreviewModal(previewData);
+            } catch (err) {
+                showToast('Error al importar el archivo CSV: ' + err.message, 'error');
+            }
+        };
+        reader.readAsText(file);
+    } else if (isJson) {
+        reader.onload = (e) => {
+            try {
+                const parsed = JSON.parse(e.target.result);
+                const items = Array.isArray(parsed) ? parsed : [parsed];
+                items.forEach(c => sanitizeClientSchema(c));
+
+                const previewData = {
+                    parsedClients: items,
+                    totalRecords: items.length,
+                    recognizedCols: ['JSON Object Schema'],
+                    importedCols: ['Todos los campos JSON del cliente'],
+                    ignoredCols: [],
+                    errors: []
+                };
+
+                openImportPreviewModal(previewData);
+            } catch (err) {
+                showToast('Error al importar archivo JSON: ' + err.message, 'error');
+            }
+        };
+        reader.readAsText(file);
+    } else {
+        showToast('Formato de archivo no soportado. Seleccione .xls, .xlsx, .csv o .json', 'error');
+    }
 }
 
 function resetDemoData() {
@@ -1363,6 +1771,9 @@ function renderClientCard(client) {
                 <button type="button" class="btn-card-action btn-action-promise" onclick="openPromiseModal('${client.id}')">
                     <i class="fas fa-handshake"></i> Promesa
                 </button>
+                <button type="button" class="btn-card-action btn-action-address" onclick="openAddressModal('${client.id}')" title="Ver ubicación y dirección">
+                    <i class="fas fa-location-dot"></i> Dirección
+                </button>
                 <button type="button" class="btn-card-action btn-action-history" onclick="openClientHistoryModal('${client.id}')">
                     <i class="fas fa-folder-open"></i> Historial (${(client.gestiones||[]).length + (client.promises||[]).length})
                 </button>
@@ -1483,6 +1894,117 @@ function handleSaveGestion(e) {
 
     showToast('Gestión de cobranza registrada', 'success');
     closeModalFn(document.getElementById('gestionModal'));
+}
+
+let selectedAddressClient = null;
+
+function openAddressModal(clientId) {
+    const client = clients.find(c => c.id === clientId);
+    if (!client) return;
+
+    selectedAddressClient = client;
+
+    const bodyEl = document.getElementById('addressModalBody');
+    if (!bodyEl) return;
+
+    const fullAddress = client.domicilio || 'No registrada';
+    const locality = client.localidad || 'No registrada';
+    const cpos = client.cpos || 'No registrado';
+    const zone = client.zona || 'No registrada';
+    const garante = client.garante || '';
+
+    bodyEl.innerHTML = `
+        <div class="address-details-card">
+            <div class="address-header-info">
+                <h3><i class="fas fa-user-circle"></i> ${escapeHtml(client.name)}</h3>
+                ${client.dni ? `<span class="badge badge-secondary">DNI: ${escapeHtml(client.dni)}</span>` : ''}
+            </div>
+
+            <div class="address-grid">
+                <div class="address-item full-width">
+                    <span class="addr-label"><i class="fas fa-road"></i> Dirección Completa</span>
+                    <span class="addr-value highlight">${escapeHtml(fullAddress)}</span>
+                </div>
+                <div class="address-item">
+                    <span class="addr-label"><i class="fas fa-city"></i> Localidad</span>
+                    <span class="addr-value">${escapeHtml(locality)}</span>
+                </div>
+                <div class="address-item">
+                    <span class="addr-label"><i class="fas fa-mail-bulk"></i> Código Postal</span>
+                    <span class="addr-value">${escapeHtml(cpos)}</span>
+                </div>
+                <div class="address-item">
+                    <span class="addr-label"><i class="fas fa-map-signs"></i> Zona</span>
+                    <span class="addr-value">${escapeHtml(zone)}</span>
+                </div>
+                ${garante ? `
+                <div class="address-item full-width">
+                    <span class="addr-label"><i class="fas fa-user-shield"></i> Garante</span>
+                    <span class="addr-value">${escapeHtml(garante)}</span>
+                </div>` : ''}
+            </div>
+        </div>
+    `;
+
+    document.getElementById('addressModal').classList.add('active');
+}
+
+function closeAddressModal() {
+    const modal = document.getElementById('addressModal');
+    if (modal) modal.classList.remove('active');
+    selectedAddressClient = null;
+}
+
+function copyAddressToClipboard() {
+    if (!selectedAddressClient) return;
+
+    const parts = [];
+    if (selectedAddressClient.domicilio) parts.push(`Dirección: ${selectedAddressClient.domicilio}`);
+    if (selectedAddressClient.localidad) parts.push(`Localidad: ${selectedAddressClient.localidad}`);
+    if (selectedAddressClient.cpos) parts.push(`CP: ${selectedAddressClient.cpos}`);
+    if (selectedAddressClient.zona) parts.push(`Zona: ${selectedAddressClient.zona}`);
+
+    const textToCopy = `${selectedAddressClient.name} - ${parts.join(', ')}`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            showToast('Dirección copiada al portapapeles', 'success');
+        }).catch(() => {
+            fallbackCopyText(textToCopy);
+        });
+    } else {
+        fallbackCopyText(textToCopy);
+    }
+}
+
+function fallbackCopyText(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+        document.execCommand('copy');
+        showToast('Dirección copiada al portapapeles', 'success');
+    } catch (e) {
+        showToast('No se pudo copiar la dirección', 'error');
+    }
+    document.body.removeChild(textarea);
+}
+
+function openAddressInGoogleMaps() {
+    if (!selectedAddressClient) return;
+
+    const queryParts = [];
+    if (selectedAddressClient.domicilio) queryParts.push(selectedAddressClient.domicilio);
+    if (selectedAddressClient.localidad) queryParts.push(selectedAddressClient.localidad);
+    if (selectedAddressClient.zona) queryParts.push(selectedAddressClient.zona);
+
+    const queryStr = queryParts.length > 0 ? queryParts.join(', ') : selectedAddressClient.name;
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryStr)}`;
+
+    window.open(mapsUrl, '_blank');
 }
 
 function openClientHistoryModal(id) {
@@ -2647,10 +3169,34 @@ function setupEventListeners() {
     els.importFileInput.addEventListener('change', (e) => {
         if (e.target.files && e.target.files[0]) {
             importData(e.target.files[0]);
-            e.target.value = '';
         }
     });
     els.resetDemoBtn.addEventListener('click', resetDemoData);
+
+    const cancelImportBtn = document.getElementById('cancelImportBtn');
+    const closeImportPreviewModalBtn = document.getElementById('closeImportPreviewModal');
+    const confirmImportBtn = document.getElementById('confirmImportBtn');
+
+    if (cancelImportBtn) cancelImportBtn.addEventListener('click', closeImportPreviewModal);
+    if (closeImportPreviewModalBtn) closeImportPreviewModalBtn.addEventListener('click', closeImportPreviewModal);
+    if (confirmImportBtn) {
+        confirmImportBtn.addEventListener('click', () => {
+            if (!pendingImportData || !pendingImportData.parsedClients) return;
+            const { updatedCount, addedCount } = mergeMonthlyPortfolio(pendingImportData.parsedClients);
+            showToast(`Importación completada: ${updatedCount} actualizados, ${addedCount} nuevos agregados. ¡Gestiones y pagos intactos!`, 'success');
+            closeImportPreviewModal();
+        });
+    }
+
+    const closeAddressModalBtn = document.getElementById('closeAddressModal');
+    const closeAddressBtn = document.getElementById('closeAddressBtn');
+    const copyAddressBtn = document.getElementById('copyAddressBtn');
+    const openMapsBtn = document.getElementById('openMapsBtn');
+
+    if (closeAddressModalBtn) closeAddressModalBtn.addEventListener('click', closeAddressModal);
+    if (closeAddressBtn) closeAddressBtn.addEventListener('click', closeAddressModal);
+    if (copyAddressBtn) copyAddressBtn.addEventListener('click', copyAddressToClipboard);
+    if (openMapsBtn) openMapsBtn.addEventListener('click', openAddressInGoogleMaps);
 
     // Pagination / Load More
     els.loadMoreBtn.addEventListener('click', () => {
