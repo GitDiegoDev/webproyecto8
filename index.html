@@ -233,8 +233,8 @@
             <div class="filter-group data-management-group">
                 <label>Importación de Cartera & Copias de Seguridad</label>
                 <div class="action-buttons-row">
-                    <button type="button" class="btn-secondary btn-sm" id="importDataBtn" title="Importar o actualizar Planilla Oficial (CSV o JSON)">
-                        <i class="fas fa-file-import"></i> Importar Cartera (CSV/JSON)
+                    <button type="button" class="btn-secondary btn-sm" id="importDataBtn" title="Importar o actualizar Planilla Oficial (.xls, .xlsx, CSV, JSON)">
+                        <i class="fas fa-file-import"></i> Importar Cartera (.xls, .xlsx, CSV, JSON)
                     </button>
                     <button type="button" class="btn-secondary btn-sm" id="exportDataBtn" title="Descargar copia de seguridad en JSON">
                         <i class="fas fa-download"></i> Exportar JSON
@@ -243,7 +243,7 @@
                         <i class="fas fa-undo"></i> Restablecer Demo
                     </button>
                 </div>
-                <input type="file" id="importFileInput" accept=".json,.csv,.txt" style="display: none;">
+                <input type="file" id="importFileInput" accept=".xls,.xlsx,.csv,.json,.txt" style="display: none;">
             </div>
         </div>
 
@@ -926,9 +926,59 @@
         </div>
     </div>
 
+    <!-- Modal Ubicación / Dirección del Cliente -->
+    <div class="modal" id="addressModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-medium">
+            <div class="modal-header">
+                <h2><i class="fas fa-map-marker-alt"></i> Dirección del Cliente</h2>
+                <button class="btn-close" id="closeAddressModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="address-modal-body" id="addressModalBody">
+                <!-- Injected dynamically via JS -->
+            </div>
+            <div class="modal-footer form-actions">
+                <button type="button" class="btn-secondary" id="copyAddressBtn">
+                    <i class="fas fa-copy"></i> Copiar Dirección
+                </button>
+                <button type="button" class="btn-primary" id="openMapsBtn">
+                    <i class="fas fa-map-marked-alt"></i> Abrir en Google Maps
+                </button>
+                <button type="button" class="btn-secondary" id="closeAddressBtn">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Vista Previa de Importación -->
+    <div class="modal" id="importPreviewModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2><i class="fas fa-file-excel"></i> Vista Previa de Importación de Cartera</h2>
+                <button class="btn-close" id="closeImportPreviewModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="import-preview-body" id="importPreviewBody">
+                <!-- Injected dynamically via JS -->
+            </div>
+            <div class="modal-footer form-actions">
+                <button type="button" class="btn-secondary" id="cancelImportBtn">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+                <button type="button" class="btn-primary" id="confirmImportBtn">
+                    <i class="fas fa-file-import"></i> Confirmar Importación
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notifications -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
+    <script src="xlsx.full.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
