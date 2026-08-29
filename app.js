@@ -760,6 +760,10 @@ const els = {
     installmentAmount: document.getElementById('installmentAmount'),
     clientPhone: document.getElementById('clientPhone'),
     clientEmail: document.getElementById('clientEmail'),
+    clientDomicilio: document.getElementById('clientDomicilio'),
+    clientLocalidad: document.getElementById('clientLocalidad'),
+    clientZona: document.getElementById('clientZona'),
+    clientCpos: document.getElementById('clientCpos'),
     clientNotes: document.getElementById('clientNotes'),
     cancelBtn: document.getElementById('cancelBtn'),
 
@@ -1242,6 +1246,10 @@ function parseCSVToClients(csvText) {
     const idxInstAmount = findIndex(['monto', 'monto_cuota', 'importe']);
     const idxPhone = findIndex(['telefono', 'teléfono', 'celular', 'phone']);
     const idxEmail = findIndex(['email', 'mail']);
+    const idxDomicilio = findIndex(['domicilio', 'direccion', 'dirección']);
+    const idxLocalidad = findIndex(['localidad', 'ciudad']);
+    const idxZona = findIndex(['zona']);
+    const idxCpos = findIndex(['cpos', 'cpo', 'cp', 'codigo_postal', 'código_postal']);
     const idxNotes = findIndex(['notas', 'observaciones']);
 
     const parsedClients = [];
@@ -1287,6 +1295,10 @@ function parseCSVToClients(csvText) {
             installmentAmount: parseCurrencyInput(getVal(idxInstAmount)),
             phone: getVal(idxPhone),
             email: getVal(idxEmail),
+            domicilio: getVal(idxDomicilio),
+            localidad: getVal(idxLocalidad),
+            zona: getVal(idxZona),
+            cpos: getVal(idxCpos),
             notes: getVal(idxNotes),
             paymentStatus: 'pending',
             isOverdue: false,
@@ -2196,8 +2208,8 @@ function openAddressInGoogleMaps() {
 
     const queryParts = [];
     if (selectedAddressClient.domicilio) queryParts.push(selectedAddressClient.domicilio);
+    if (selectedAddressClient.cpos) queryParts.push(selectedAddressClient.cpos);
     if (selectedAddressClient.localidad) queryParts.push(selectedAddressClient.localidad);
-    if (selectedAddressClient.zona) queryParts.push(selectedAddressClient.zona);
 
     const queryStr = queryParts.length > 0 ? queryParts.join(', ') : selectedAddressClient.name;
     const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryStr)}`;
@@ -2207,7 +2219,7 @@ function openAddressInGoogleMaps() {
 
 function openDailyRoute() {
     const visibleClients = getFilteredClients();
-    const clientsWithAddr = visibleClients.filter(c => c.domicilio || c.localidad || c.zona);
+    const clientsWithAddr = visibleClients.filter(c => c.domicilio || c.cpos || c.localidad);
 
     if (clientsWithAddr.length === 0) {
         showToast('No hay clientes visibles con dirección registrada para armar la ruta', 'error');
@@ -2215,7 +2227,7 @@ function openDailyRoute() {
     }
 
     const addresses = clientsWithAddr.map(c => {
-        const parts = [c.domicilio, c.localidad, c.zona].filter(Boolean);
+        const parts = [c.domicilio, c.cpos, c.localidad].filter(Boolean);
         return parts.join(', ');
     });
 
@@ -2910,6 +2922,10 @@ function openAddModal() {
     els.penaltyRate.value = '1.0';
     els.periodMonth.value = getToday().substring(0, 7);
     els.clientDni.value = '';
+    if (els.clientDomicilio) els.clientDomicilio.value = '';
+    if (els.clientLocalidad) els.clientLocalidad.value = '';
+    if (els.clientZona) els.clientZona.value = '';
+    if (els.clientCpos) els.clientCpos.value = '';
     openModal(els.clientModal);
     els.clientName.focus();
 }
@@ -2937,6 +2953,10 @@ function editClient(id) {
     els.installmentAmount.value = client.installmentAmount ? client.installmentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     els.clientPhone.value = client.phone || '';
     els.clientEmail.value = client.email || '';
+    if (els.clientDomicilio) els.clientDomicilio.value = client.domicilio || '';
+    if (els.clientLocalidad) els.clientLocalidad.value = client.localidad || '';
+    if (els.clientZona) els.clientZona.value = client.zona || '';
+    if (els.clientCpos) els.clientCpos.value = client.cpos || '';
     els.clientNotes.value = client.notes || '';
 
     openModal(els.clientModal);
@@ -2969,6 +2989,10 @@ function handleSaveClient(e) {
         installmentAmount: parseCurrencyInput(els.installmentAmount.value),
         phone: els.clientPhone.value.trim(),
         email: els.clientEmail.value.trim(),
+        domicilio: els.clientDomicilio ? els.clientDomicilio.value.trim() : '',
+        localidad: els.clientLocalidad ? els.clientLocalidad.value.trim() : '',
+        zona: els.clientZona ? els.clientZona.value.trim() : '',
+        cpos: els.clientCpos ? els.clientCpos.value.trim() : '',
         notes: els.clientNotes.value.trim()
     };
 

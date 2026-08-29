@@ -371,6 +371,26 @@
                     <label for="clientEmail">Email</label>
                     <input type="email" id="clientEmail" placeholder="Ej: cliente@email.com" autocomplete="email">
                 </div>
+                <div class="form-row">
+                    <div class="form-group flex-2">
+                        <label for="clientDomicilio">Domicilio</label>
+                        <input type="text" id="clientDomicilio" placeholder="Ej: Av. San Martín 123" autocomplete="street-address">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="clientCpos">Código Postal</label>
+                        <input type="text" id="clientCpos" placeholder="Ej: 3360" autocomplete="postal-code">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="clientLocalidad">Localidad</label>
+                        <input type="text" id="clientLocalidad" placeholder="Ej: Oberá" autocomplete="address-level2">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="clientZona">Zona <span class="input-hint">(Uso interno de rutas, no geolocaliza)</span></label>
+                        <input type="text" id="clientZona" placeholder="Ej: Zona Centro">
+                    </div>
+                </div>
                 <div class="form-group">
                     <label for="clientNotes">Notas</label>
                     <textarea id="clientNotes" rows="2" placeholder="Observaciones..."></textarea>
