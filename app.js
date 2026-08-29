@@ -32,7 +32,7 @@ let clients = [];
 let currentFilter = 'all';
 let currentStatusFilter = 'active';
 let currentMonthFilter = 'all';
-let currentSortBy = 'paymentDay-asc';
+let currentSortBy = 'status-asc';
 let searchQuery = '';
 let editingId = null;
 let deletingId = null;
@@ -868,6 +868,15 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function buildWhatsAppLink(client, message = '') {
+    if (!client) return '#';
+    const rawPhone = client.phone || client.celular || '';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    if (!cleanPhone) return '#';
+    const msg = message || `Hola ${client.name}, me comunico de Palmares Efectivo en el Acto por tu cuota de ${formatMonthYear(client.periodMonth)}`;
+    return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+}
+
 // ========================================
 // DATA BACKUP & EXPORT/IMPORT
 // ========================================
@@ -1298,6 +1307,7 @@ function parseCSVToClients(csvText) {
 }
 
 let pendingImportData = null;
+let currentReceiptData = null;
 
 function openImportPreviewModal(previewData) {
     pendingImportData = previewData;
@@ -1576,11 +1586,20 @@ function importData(file) {
 }
 
 function resetDemoData() {
-    if (confirm('¿Estás seguro de restablecer los datos originales de demostración? Se sobrescribirán los cambios actuales.')) {
+    const confirmationWord = "RESTABLECER";
+    const userInput = prompt(
+        `⚠️ ATENCIÓN: Estás a punto de restablecer los datos de la aplicación.\n\n` +
+        `Esta acción BORRARÁ permanentemente todos los datos de clientes reales, gestiones, promesas y pagos cargados en el dispositivo, reemplazándolos con datos de demostración.\n\n` +
+        `Para confirmar que deseas continuar, escribe exactamente la palabra: ${confirmationWord}`
+    );
+
+    if (userInput && userInput.trim().toUpperCase() === confirmationWord) {
         clients = getDemoData();
         saveClients();
         renderClients();
         showToast('Datos de demostración restablecidos', 'info');
+    } else if (userInput !== null) {
+        showToast('Palabra de confirmación incorrecta. No se restablecieron los datos.', 'error');
     }
 }
 
@@ -1714,6 +1733,7 @@ function renderClients() {
     const filtered = getFilteredClients();
     updateStats();
     updateDailyDashboard();
+    updateDailyRouteBtnVisibility();
 
     if (filtered.length === 0) {
         els.clientsContainer.innerHTML = '';
@@ -1762,6 +1782,16 @@ function renderClients() {
     els.clientsContainer.innerHTML = container.innerHTML;
 }
 
+function toggleCardDetails(clientId) {
+    const detailsEl = document.getElementById(`card-details-${clientId}`);
+    const toggleBtn = document.getElementById(`card-toggle-btn-${clientId}`);
+    if (!detailsEl || !toggleBtn) return;
+
+    const isHidden = detailsEl.style.display === 'none' || !detailsEl.style.display;
+    detailsEl.style.display = isHidden ? 'block' : 'none';
+    toggleBtn.innerHTML = isHidden ? '<i class="fas fa-chevron-up"></i> Menos detalles' : '<i class="fas fa-chevron-down"></i> Ver detalles';
+}
+
 function renderClientCard(client) {
     const typeConfig = TYPE_CONFIG[client.type];
     const statusConfig = STATUS_CONFIG[client.paymentStatus];
@@ -1771,45 +1801,32 @@ function renderClientCard(client) {
     const isTomorrow = (currentDay === 31 ? 1 : currentDay + 1) === client.paymentDay;
     const isSalaryDay = currentDay === client.salaryDay;
 
-    let contactHtml = '';
-    if (client.phone || client.email) {
-        contactHtml = `<div class="client-contact">`;
-        if (client.phone) contactHtml += `<span><i class="fas fa-phone"></i> ${escapeHtml(client.phone)}</span>`;
-        if (client.email) contactHtml += `<span><i class="fas fa-envelope"></i> ${escapeHtml(client.email)}</span>`;
-        contactHtml += `</div>`;
-    }
-
-    let notesHtml = client.notes ? `<div class="client-notes"><i class="fas fa-sticky-note"></i> ${escapeHtml(client.notes)}</div>` : '';
-
-    let amountsHtml = '';
-    if (client.loanAmount > 0 || client.installmentAmount > 0) {
-        amountsHtml = `<div class="client-amounts">`;
-        if (client.loanAmount > 0) {
-            amountsHtml += `<div class="amount-badge"><span class="label">Préstamo:</span><span class="value">${formatCurrency(client.loanAmount)}</span></div>`;
-        }
-        if (client.installmentAmount > 0) {
-            amountsHtml += `<div class="amount-badge"><span class="label">Cuota:</span><span class="value">${formatCurrency(client.installmentAmount)}</span></div>`;
-        }
-        amountsHtml += `</div>`;
+    // Fused Single Status / Urgency Indicator
+    let combinedStatusLabel = statusConfig.label;
+    if (client.paymentStatus === 'overdue' && client.daysOverdue > 0) {
+        combinedStatusLabel = `🔴 Atrasado - ${client.daysOverdue} ${client.daysOverdue === 1 ? 'día' : 'días'}`;
+    } else if (client.paymentStatus === 'paid') {
+        combinedStatusLabel = `🟢 Pagado`;
+    } else if (client.paymentStatus === 'partial') {
+        combinedStatusLabel = `🟡 Pago Parcial`;
+    } else if (isPayDay) {
+        combinedStatusLabel = `🔵 Vence Hoy`;
+    } else if (isTomorrow) {
+        combinedStatusLabel = `🔵 Vence Mañana`;
+    } else {
+        combinedStatusLabel = `⚪ Pendiente`;
     }
 
     const punitorios = (client.paymentStatus === 'overdue' && client.daysOverdue > 0) ? calculatePunitorios(client.installmentAmount, client.daysOverdue, client.penaltyRate) : 0;
 
-    let overdueHtml = '';
-    if (client.paymentStatus === 'overdue' && client.daysOverdue > 0) {
-        overdueHtml = `<span class="overdue-badge"><i class="fas fa-clock"></i> ${client.daysOverdue} días de mora</span>`;
-        if (punitorios > 0) {
-            overdueHtml += `<span class="penalty-badge" title="Interés punitorio por mora (${client.penaltyRate || 1.0}% diario)"><i class="fas fa-percent"></i> Punitorios: ${formatCurrency(punitorios)}</span>`;
-        }
+    let overduePenaltyHtml = '';
+    if (client.paymentStatus === 'overdue' && punitorios > 0) {
+        overduePenaltyHtml = `<span class="penalty-badge" title="Interés punitorio por mora (${client.penaltyRate || 1.0}% diario)"><i class="fas fa-percent"></i> Punitorios: ${formatCurrency(punitorios)}</span>`;
     }
 
     let todayBadgeHtml = '';
     if (isSalaryDay) {
         todayBadgeHtml = `<span class="badge badge-today"><i class="fas fa-wallet"></i> Cobra Sueldo Hoy (día ${client.salaryDay})</span>`;
-    } else if (isPayDay && client.paymentStatus !== 'paid') {
-        todayBadgeHtml = `<span class="badge badge-today"><i class="fas fa-exclamation-circle"></i> Vence Cuota Hoy</span>`;
-    } else if (isTomorrow && client.paymentStatus !== 'paid') {
-        todayBadgeHtml = `<span class="badge badge-tomorrow"><i class="fas fa-bell"></i> Vence Cuota Mañana</span>`;
     }
 
     const dniTermination = getDniTermination(client.dni);
@@ -1830,6 +1847,13 @@ function renderClientCard(client) {
     let instBadgeHtml = `<span class="badge badge-installment" title="Número de cuota"><i class="fas fa-list-ol"></i> Cuota ${escapeHtml(instText)}</span>`;
     let monthLabel = formatMonthYear(client.periodMonth);
     let monthBadgeHtml = monthLabel ? `<span class="badge badge-period-month ${client.paymentStatus === 'overdue' ? 'overdue' : ''}" title="Mes del período"><i class="fas fa-calendar-alt"></i> Mes: ${escapeHtml(monthLabel)}</span>` : '';
+
+    let contactHtml = '';
+    if (client.email) {
+        contactHtml = `<div class="client-contact"><span><i class="fas fa-envelope"></i> ${escapeHtml(client.email)}</span></div>`;
+    }
+
+    let notesHtml = client.notes ? `<div class="client-notes"><i class="fas fa-sticky-note"></i> ${escapeHtml(client.notes)}</div>` : '';
 
     const payBtnText = client.paymentStatus === 'paid' ? '<i class="fas fa-check"></i> Pagado' : 'Registrar pago';
     const payBtnClass = client.paymentStatus === 'paid' ? 'paid' : '';
@@ -1855,68 +1879,85 @@ function renderClientCard(client) {
 
     return `
         <div class="client-card ${client.paymentStatus}">
+            <!-- CAPA PRINCIPAL (SIEMPRE VISIBLE) -->
             <div class="card-header">
                 <div class="client-info">
                     <div class="client-name">${escapeHtml(client.name)}</div>
-                    <div class="client-meta">
-                        <span class="badge ${typeConfig.badgeClass}">
-                            <i class="fas ${typeConfig.icon}"></i> ${typeConfig.label}
-                        </span>
-                        ${branchBadgeHtml}
-                        ${reqBadgeHtml}
-                        ${instBadgeHtml}
-                        ${monthBadgeHtml}
-                        ${dniHtml}
-                        ${todayBadgeHtml}
-                        <span class="payment-day" title="Día de cobro de sueldo">
-                            <i class="fas fa-wallet"></i> Sueldo: día ${client.salaryDay || '-'}
-                        </span>
-                        <span class="payment-day" title="Día de vencimiento de cuota">
-                            <i class="fas fa-calendar-day"></i> Venc. Cuota: día ${client.paymentDay}
-                        </span>
+                    <div class="status-indicator">
+                        <span class="status-dot ${statusConfig.dotClass}"></span>
+                        <span class="status-text ${statusConfig.class}">${escapeHtml(combinedStatusLabel)}</span>
                     </div>
                 </div>
-                <div class="card-actions">
-                    <button class="btn-icon payment" onclick="openPaymentModal('${client.id}')" title="Registrar pago" aria-label="Registrar pago">
-                        <i class="fas fa-dollar-sign"></i>
-                    </button>
-                    <button class="btn-icon edit" onclick="editClient('${client.id}')" title="Editar" aria-label="Editar cliente">
-                        <i class="fas fa-pen"></i>
-                    </button>
-                    <button class="btn-icon delete" onclick="confirmDelete('${client.id}')" title="Eliminar" aria-label="Eliminar cliente">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                <div class="amount-badge primary-amount">
+                    <span class="label">Cuota:</span>
+                    <span class="value">${formatCurrency(client.installmentAmount)}</span>
                 </div>
             </div>
-            ${amountsHtml}
-            ${contactHtml}
-            ${notesHtml}
-            ${activePromiseHtml}
+
             <div class="payment-status">
-                <div class="status-indicator">
-                    <span class="status-dot ${statusConfig.dotClass}"></span>
-                    <span class="status-text ${statusConfig.class}">${statusConfig.label}</span>
-                    ${overdueHtml}
-                </div>
-                <button class="btn-pay ${payBtnClass}" onclick="openPaymentModal('${client.id}')">
+                <button class="btn-pay ${payBtnClass}" onclick="openPaymentModal('${client.id}')" style="width: 100%;">
                     ${payBtnText}
                 </button>
             </div>
+
+            <!-- Máximo 3 acciones rápidas visibles -->
             <div class="card-quick-actions">
-                ${client.phone ? `<a href="https://wa.me/${escapeHtml(client.phone.replace(/\D/g, ''))}?text=${encodeURIComponent('Hola ' + client.name + ', me comunico de Palmares Efectivo en el Acto por tu cuota de ' + formatMonthYear(client.periodMonth))}" target="_blank" class="btn-card-action btn-whatsapp"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+                ${client.phone ? `<a href="${escapeHtml(buildWhatsAppLink(client))}" target="_blank" class="btn-card-action btn-whatsapp"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
                 ${client.phone ? `<a href="tel:${escapeHtml(client.phone)}" class="btn-card-action btn-call"><i class="fas fa-phone"></i> Llamar</a>` : ''}
                 <button type="button" class="btn-card-action btn-action-gestion" onclick="openGestionModal('${client.id}')">
                     <i class="fas fa-headset"></i> Gestión
                 </button>
-                <button type="button" class="btn-card-action btn-action-promise" onclick="openPromiseModal('${client.id}')">
-                    <i class="fas fa-handshake"></i> Promesa
+            </div>
+
+            <div class="card-toggle-wrapper" style="text-align: center; margin-top: 0.5rem;">
+                <button type="button" id="card-toggle-btn-${client.id}" class="btn-card-toggle" onclick="toggleCardDetails('${client.id}')">
+                    <i class="fas fa-chevron-down"></i> Ver detalles
                 </button>
-                <button type="button" class="btn-card-action btn-action-address" onclick="openAddressModal('${client.id}')" title="Ver ubicación y dirección">
-                    <i class="fas fa-location-dot"></i> Dirección
-                </button>
-                <button type="button" class="btn-card-action btn-action-history" onclick="openClientHistoryModal('${client.id}')">
-                    <i class="fas fa-folder-open"></i> Historial (${(client.gestiones||[]).length + (client.promises||[]).length})
-                </button>
+            </div>
+
+            <!-- CAPA SECUNDARIA (COLAPSADA POR DEFECTO) -->
+            <div id="card-details-${client.id}" class="card-secondary-layer" style="display: none;">
+                <div class="client-meta" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+                    <span class="badge ${typeConfig.badgeClass}">
+                        <i class="fas ${typeConfig.icon}"></i> ${typeConfig.label}
+                    </span>
+                    ${branchBadgeHtml}
+                    ${reqBadgeHtml}
+                    ${instBadgeHtml}
+                    ${monthBadgeHtml}
+                    ${dniHtml}
+                    ${todayBadgeHtml}
+                    <span class="payment-day" title="Día de cobro de sueldo">
+                        <i class="fas fa-wallet"></i> Sueldo: día ${client.salaryDay || '-'}
+                    </span>
+                    <span class="payment-day" title="Día de vencimiento de cuota">
+                        <i class="fas fa-calendar-day"></i> Venc. Cuota: día ${client.paymentDay}
+                    </span>
+                    ${client.loanAmount > 0 ? `<span class="payment-day"><i class="fas fa-hand-holding-dollar"></i> Préstamo: ${formatCurrency(client.loanAmount)}</span>` : ''}
+                </div>
+
+                ${contactHtml}
+                ${notesHtml}
+                ${activePromiseHtml}
+                ${overduePenaltyHtml ? `<div style="margin-top:0.35rem;">${overduePenaltyHtml}</div>` : ''}
+
+                <div class="secondary-actions-row" style="display: flex; gap: 0.35rem; margin-top: 0.65rem; padding-top: 0.5rem; border-top: 1px dashed var(--border); flex-wrap: wrap;">
+                    <button type="button" class="btn-card-action btn-action-promise" onclick="openPromiseModal('${client.id}')">
+                        <i class="fas fa-handshake"></i> Promesa
+                    </button>
+                    <button type="button" class="btn-card-action btn-action-address" onclick="openAddressModal('${client.id}')" title="Ver ubicación y dirección">
+                        <i class="fas fa-location-dot"></i> Dirección
+                    </button>
+                    <button type="button" class="btn-card-action btn-action-history" onclick="openClientHistoryModal('${client.id}')">
+                        <i class="fas fa-folder-open"></i> Historial (${(client.gestiones||[]).length + (client.promises||[]).length})
+                    </button>
+                    <button type="button" class="btn-card-action" onclick="editClient('${client.id}')" title="Editar">
+                        <i class="fas fa-pen"></i> Editar
+                    </button>
+                    <button type="button" class="btn-card-action btn-outline-danger" onclick="confirmDelete('${client.id}')" title="Eliminar">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -1926,9 +1967,13 @@ function renderClientCard(client) {
 // GESTIONES DIARIAS & HISTORIAL
 // ========================================
 
+let currentGestionClient = null;
+
 function openGestionModal(id) {
     const client = clients.find(c => c.id === id);
     if (!client) return;
+
+    currentGestionClient = client;
 
     const gestionClientId = document.getElementById('gestionClientId');
     const gestionClientPreview = document.getElementById('gestionClientPreview');
@@ -1969,7 +2014,19 @@ function openGestionModal(id) {
         promiseAutoFields.style.display = (gestionResult.value === 'Prometió pagar') ? 'block' : 'none';
     }
 
+    toggleGestionWaBtn();
+
     openModal(document.getElementById('gestionModal'));
+}
+
+function toggleGestionWaBtn() {
+    const gestionType = document.getElementById('gestionType');
+    const container = document.getElementById('openGestionWaContainer');
+    if (gestionType && container) {
+        const isWa = gestionType.value === 'WhatsApp / mensaje';
+        const hasPhone = currentGestionClient && (currentGestionClient.phone || currentGestionClient.celular);
+        container.style.display = (isWa && hasPhone) ? 'block' : 'none';
+    }
 }
 
 function handleSaveGestion(e) {
@@ -2146,6 +2203,42 @@ function openAddressInGoogleMaps() {
     const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryStr)}`;
 
     window.open(mapsUrl, '_blank');
+}
+
+function openDailyRoute() {
+    const visibleClients = getFilteredClients();
+    const clientsWithAddr = visibleClients.filter(c => c.domicilio || c.localidad || c.zona);
+
+    if (clientsWithAddr.length === 0) {
+        showToast('No hay clientes visibles con dirección registrada para armar la ruta', 'error');
+        return;
+    }
+
+    const addresses = clientsWithAddr.map(c => {
+        const parts = [c.domicilio, c.localidad, c.zona].filter(Boolean);
+        return parts.join(', ');
+    });
+
+    const destination = addresses[addresses.length - 1];
+    let routeUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+
+    if (addresses.length > 1) {
+        const waypoints = addresses.slice(0, addresses.length - 1).join('|');
+        routeUrl += `&waypoints=${encodeURIComponent(waypoints)}`;
+    }
+
+    window.open(routeUrl, '_blank');
+}
+
+function updateDailyRouteBtnVisibility() {
+    const routeBtn = document.getElementById('dailyRouteBtn');
+    if (!routeBtn) return;
+    const isTodayOrOverdue = (
+        currentStatusFilter === 'today' ||
+        currentStatusFilter === 'today_due' ||
+        currentStatusFilter === 'overdue'
+    );
+    routeBtn.style.display = isTodayOrOverdue ? 'inline-flex' : 'none';
 }
 
 function openClientHistoryModal(id) {
@@ -2429,6 +2522,21 @@ function showReceiptModal(clientId, paymentId) {
         });
     }
 
+    const gestionTypeSelect = document.getElementById('gestionType');
+    if (gestionTypeSelect) {
+        gestionTypeSelect.addEventListener('change', toggleGestionWaBtn);
+    }
+
+    const openGestionWaBtn = document.getElementById('openGestionWaBtn');
+    if (openGestionWaBtn) {
+        openGestionWaBtn.addEventListener('click', () => {
+            if (currentGestionClient) {
+                const link = buildWhatsAppLink(currentGestionClient);
+                if (link !== '#') window.open(link, '_blank');
+            }
+        });
+    }
+
     const totalAccumulatedSoFar = previousPaidBeforeThis + totalCobrado;
     const totalRequired = baseCuota + Math.max(0, punitoriosGen - punitoriosWaived);
     const pendingBalance = Math.max(0, totalRequired - totalAccumulatedSoFar);
@@ -2485,7 +2593,49 @@ function showReceiptModal(clientId, paymentId) {
         </div>
     `;
 
+    currentReceiptData = {
+        client: targetClient,
+        payment: targetPayment,
+        totalCobrado: totalCobrado
+    };
+
     openModal(document.getElementById('receiptModal'));
+}
+
+function shareReceiptWhatsApp() {
+    if (!currentReceiptData || !currentReceiptData.client || !currentReceiptData.payment) {
+        showToast('No hay información de comprobante para compartir', 'error');
+        return;
+    }
+
+    const { client, payment, totalCobrado } = currentReceiptData;
+    const msg = `Hola ${client.name}, te enviamos tu comprobante de pago Palmares Efectivo en el Acto:
+• Comprobante N°: ${payment.receiptNumber || '-'}
+• Importe Cobrado: ${formatCurrency(totalCobrado)}
+• Fecha: ${formatDate(payment.date)}
+• Período: ${formatMonthYear(payment.periodMonth)} (Cuota ${payment.installmentNumber})
+¡Muchas gracias!`;
+
+    if (navigator.share) {
+        navigator.share({
+            title: `Comprobante N° ${payment.receiptNumber}`,
+            text: msg
+        }).catch(() => {
+            openWhatsAppDirect(client, msg);
+        });
+    } else {
+        openWhatsAppDirect(client, msg);
+    }
+}
+
+function openWhatsAppDirect(client, msg) {
+    const rawPhone = client.phone || client.celular || '';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    if (cleanPhone) {
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    } else {
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    }
 }
 
 // ========================================
@@ -2961,6 +3111,18 @@ function openPaymentModal(id) {
     updatePaymentCalculationBox(client);
     renderPaymentHistory(client);
     toggleOverdueFields();
+
+    // Collapse extra details by default (Modo Cobro Rápido)
+    const paymentMoreDetails = document.getElementById('paymentMoreDetails');
+    const toggleBtnText = document.getElementById('togglePaymentDetailsText');
+    const toggleBtn = document.getElementById('togglePaymentDetailsBtn');
+    if (paymentMoreDetails) paymentMoreDetails.style.display = 'none';
+    if (toggleBtnText) toggleBtnText.textContent = 'Ver más detalles';
+    if (toggleBtn) {
+        const icon = toggleBtn.querySelector('i');
+        if (icon) icon.className = 'fas fa-chevron-down';
+    }
+
     openModal(els.paymentModal);
 }
 
@@ -3213,6 +3375,12 @@ function setupFilters() {
             document.querySelectorAll('[data-status]').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentStatusFilter = btn.dataset.status;
+
+            // Sync daily dashboard card selection
+            document.querySelectorAll('.daily-card.clickable').forEach(c => c.classList.remove('selected'));
+            const matchingCard = document.querySelector(`.daily-card.clickable[data-quick-filter="${currentStatusFilter}"]`);
+            if (matchingCard) matchingCard.classList.add('selected');
+
             displayLimit = 20;
             renderClients();
         });
@@ -3248,6 +3416,10 @@ function setupFilters() {
         card.addEventListener('click', () => {
             const filterKey = card.dataset.quickFilter;
             currentStatusFilter = filterKey;
+
+            // Sync selected card UI
+            document.querySelectorAll('.daily-card.clickable').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
 
             // Sync filter chips UI
             document.querySelectorAll('[data-status]').forEach(b => b.classList.remove('active'));
@@ -3355,6 +3527,9 @@ function setupEventListeners() {
     const printReceiptBtn = document.getElementById('printReceiptBtn');
     if (printReceiptBtn) printReceiptBtn.addEventListener('click', () => window.print());
 
+    const shareReceiptWaBtn = document.getElementById('shareReceiptWaBtn');
+    if (shareReceiptWaBtn) shareReceiptWaBtn.addEventListener('click', shareReceiptWhatsApp);
+
     const closeReceiptModal = document.getElementById('closeReceiptModal');
     if (closeReceiptModal) closeReceiptModal.addEventListener('click', () => closeModalFn(document.getElementById('receiptModal')));
 
@@ -3396,6 +3571,21 @@ function setupEventListeners() {
 
     const exportPaymentsForm = document.getElementById('exportPaymentsForm');
     if (exportPaymentsForm) exportPaymentsForm.addEventListener('submit', handleStartExport);
+
+    const togglePaymentDetailsBtn = document.getElementById('togglePaymentDetailsBtn');
+    if (togglePaymentDetailsBtn) {
+        togglePaymentDetailsBtn.addEventListener('click', () => {
+            const details = document.getElementById('paymentMoreDetails');
+            const text = document.getElementById('togglePaymentDetailsText');
+            const icon = togglePaymentDetailsBtn.querySelector('i');
+            if (details) {
+                const isHidden = details.style.display === 'none' || !details.style.display;
+                details.style.display = isHidden ? 'block' : 'none';
+                if (text) text.textContent = isHidden ? 'Ver menos detalles' : 'Ver más detalles';
+                if (icon) icon.className = isHidden ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+            }
+        });
+    }
 
     els.paymentForm.addEventListener('submit', handleSavePayment);
     els.isOverdue.addEventListener('change', () => {
@@ -3447,11 +3637,30 @@ function setupEventListeners() {
     const closeAddressBtn = document.getElementById('closeAddressBtn');
     const copyAddressBtn = document.getElementById('copyAddressBtn');
     const openMapsBtn = document.getElementById('openMapsBtn');
+    const dailyRouteBtn = document.getElementById('dailyRouteBtn');
 
     if (closeAddressModalBtn) closeAddressModalBtn.addEventListener('click', closeAddressModal);
     if (closeAddressBtn) closeAddressBtn.addEventListener('click', closeAddressModal);
     if (copyAddressBtn) copyAddressBtn.addEventListener('click', copyAddressToClipboard);
     if (openMapsBtn) openMapsBtn.addEventListener('click', openAddressInGoogleMaps);
+    if (dailyRouteBtn) dailyRouteBtn.addEventListener('click', openDailyRoute);
+
+    const togglePortfolioKpisBtn = document.getElementById('togglePortfolioKpisBtn');
+    if (togglePortfolioKpisBtn) {
+        togglePortfolioKpisBtn.addEventListener('click', () => {
+            const section = document.getElementById('portfolioKpisSection');
+            const text = document.getElementById('togglePortfolioKpisText');
+            if (section) {
+                const isHidden = section.style.display === 'none' || !section.style.display;
+                section.style.display = isHidden ? 'block' : 'none';
+                if (text) {
+                    text.innerHTML = isHidden
+                        ? '<i class="fas fa-chevron-up"></i> Ocultar resumen'
+                        : '<i class="fas fa-chevron-down"></i> Ver resumen de cartera';
+                }
+            }
+        });
+    }
 
     // Pagination / Load More
     els.loadMoreBtn.addEventListener('click', () => {
