@@ -30,7 +30,7 @@ const STATUS_CONFIG = {
 
 let clients = [];
 let currentFilter = 'all';
-let currentStatusFilter = 'all';
+let currentStatusFilter = 'active';
 let currentMonthFilter = 'all';
 let currentSortBy = 'paymentDay-asc';
 let searchQuery = '';
@@ -838,13 +838,27 @@ function showToast(message, type = 'info') {
 }
 
 function openModal(modal) {
+    if (!modal) return;
+    const currentlyOpen = document.querySelectorAll('.modal.open');
+    const baseZIndex = 1000;
+    const stackIndex = currentlyOpen.length;
+    if (modal.style) {
+        modal.style.zIndex = baseZIndex + (stackIndex * 20);
+    }
     modal.classList.add('open');
     document.body.style.overflow = 'hidden';
 }
 
 function closeModalFn(modal) {
+    if (!modal) return;
     modal.classList.remove('open');
-    document.body.style.overflow = '';
+    if (modal.style) {
+        modal.style.zIndex = '';
+    }
+    const remainingOpen = document.querySelectorAll('.modal.open');
+    if (remainingOpen.length === 0) {
+        document.body.style.overflow = '';
+    }
 }
 
 function escapeHtml(text) {
@@ -1623,7 +1637,9 @@ function getFilteredClients() {
     }
 
     const todayStr = getToday();
-    if (currentStatusFilter !== 'all') {
+    if (currentStatusFilter === 'active') {
+        filtered = filtered.filter(c => c.paymentStatus !== 'paid');
+    } else if (currentStatusFilter !== 'all') {
         if (currentStatusFilter === 'today' || currentStatusFilter === 'today_due') {
             filtered = filtered.filter(c => c.paymentDay === todayDay && c.paymentStatus !== 'paid');
         } else if (currentStatusFilter === 'unmanaged') {
@@ -2218,6 +2234,17 @@ function renderClientHistoryTimeline(client) {
                         <div class="timeline-title"><i class="fas fa-handshake"></i> Fecha Prometida: ${formatDate(pr.promisedDate)} — Importe: ${formatCurrency(pr.promisedAmount)}</div>
                         <div class="timeline-body">Medio de pago acordado: <strong>${escapeHtml(pr.paymentMethod)}</strong></div>
                         ${pr.observations ? `<div class="timeline-body">"${escapeHtml(pr.observations)}"</div>` : ''}
+                        <div class="promise-actions-row">
+                            <button type="button" class="btn-promise-status btn-fulfilled ${pr.status === 'cumplida' ? 'active' : ''}" onclick="updatePromiseStatus('${client.id}', '${pr.id}', 'cumplida')">
+                                <i class="fas fa-check-circle"></i> Cumplida
+                            </button>
+                            <button type="button" class="btn-promise-status btn-broken ${pr.status === 'incumplida' ? 'active' : ''}" onclick="updatePromiseStatus('${client.id}', '${pr.id}', 'incumplida')">
+                                <i class="fas fa-times-circle"></i> Incumplida
+                            </button>
+                            <button type="button" class="btn-promise-status btn-pending ${pr.status === 'pendiente' ? 'active' : ''}" onclick="updatePromiseStatus('${client.id}', '${pr.id}', 'pendiente')">
+                                <i class="fas fa-clock"></i> Pendiente
+                            </button>
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -2285,6 +2312,25 @@ function openPromiseModal(id) {
     if (promiseObservations) promiseObservations.value = '';
 
     openModal(document.getElementById('promiseModal'));
+}
+
+function updatePromiseStatus(clientId, promiseId, newStatus) {
+    const client = clients.find(c => c.id === clientId);
+    if (!client || !Array.isArray(client.promises)) return;
+    const promise = client.promises.find(p => p.id === promiseId);
+    if (!promise) return;
+
+    promise.status = newStatus;
+    updateOverdueStatuses();
+    saveClients();
+    renderClients();
+
+    if (document.getElementById('clientHistoryModal') && document.getElementById('clientHistoryModal').classList.contains('open')) {
+        renderClientHistoryTimeline(client);
+    }
+
+    const labelMap = { cumplida: 'Cumplida', incumplida: 'Incumplida', pendiente: 'Pendiente', vencida: 'Vencida' };
+    showToast(`Promesa de pago marcada como ${labelMap[newStatus] || newStatus}`, 'info');
 }
 
 function handleSavePromise(e) {
@@ -3003,11 +3049,17 @@ function renderPaymentHistory(client) {
         const instLabel = p.installmentNumber ? ` (Cuota ${escapeHtml(p.installmentNumber)})` : '';
         return `
             <div class="history-item">
-                <div>
-                    <span class="hist-date"><i class="fas fa-calendar"></i> ${formatDate(p.date)} - N° Comp: ${escapeHtml(p.receiptNumber)} - Período: ${escapeHtml(mLabel)}${instLabel}</span>
-                    ${p.notes ? `<div class="hist-note">${escapeHtml(p.notes)}</div>` : ''}
+                <div class="history-item-info">
+                    <span class="hist-date"><i class="fas fa-calendar-alt"></i> ${formatDate(p.date)} — Comp. N.° ${escapeHtml(p.receiptNumber)}</span>
+                    <span class="hist-period"><i class="fas fa-layer-group"></i> ${escapeHtml(mLabel)}${instLabel} • ${escapeHtml(p.paymentMethod || 'Efectivo')}</span>
+                    ${p.notes ? `<div class="hist-note">"${escapeHtml(p.notes)}"</div>` : ''}
                 </div>
-                <span class="hist-amount">${formatCurrency(p.amount)}</span>
+                <div class="history-item-actions">
+                    <span class="hist-amount">${formatCurrency(p.amount)}</span>
+                    <button type="button" class="btn-card-action btn-sm" onclick="showReceiptModal('${client.id}', '${p.id}')" title="Ver / Imprimir Comprobante">
+                        <i class="fas fa-file-invoice"></i> Ver
+                    </button>
+                </div>
             </div>
         `;
     }).join('');
@@ -3117,12 +3169,13 @@ function handleSavePayment(e) {
         createdAt: new Date().toISOString()
     };
 
-    if (linkedPromiseId && Array.isArray(client.promises)) {
-        const pr = client.promises.find(p => p.id === linkedPromiseId);
-        if (pr) {
-            pr.status = 'cumplida';
-            pr.paymentId = newPayment.id;
-        }
+    if (Array.isArray(client.promises)) {
+        client.promises.forEach(pr => {
+            if (pr.id === linkedPromiseId || pr.status === 'pendiente' || pr.status === 'vencida') {
+                pr.status = 'cumplida';
+                pr.paymentId = newPayment.id;
+            }
+        });
     }
 
     if (!client.payments) client.payments = [];
