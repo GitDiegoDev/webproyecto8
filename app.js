@@ -546,10 +546,12 @@ function updateOverdueStatuses() {
 
         // If unpaid and current date is past client payment day
         if (currentDay > client.paymentDay) {
-            client.paymentStatus = 'overdue';
+            if (client.paymentStatus !== 'partial') {
+                client.paymentStatus = 'overdue';
+            }
             client.isOverdue = true;
             client.daysOverdue = currentDay - client.paymentDay;
-        } else if (client.paymentStatus !== 'overdue') {
+        } else if (client.paymentStatus !== 'overdue' && client.paymentStatus !== 'partial') {
             client.paymentStatus = 'pending';
             client.isOverdue = false;
             client.daysOverdue = 0;
@@ -953,40 +955,53 @@ function parseMinicuota(value) {
     if (value === null || value === undefined) {
         return { currentInstallment: 1, totalInstallments: 12 };
     }
+
+    let curr = 1;
+    let tot = 12;
+
+    // Handle JS Date objects (SheetJS with cellDates: true can convert "7/9" to Date)
+    if (value instanceof Date && !isNaN(value.getTime())) {
+        const day = value.getDate();
+        const month = value.getMonth() + 1;
+        if (day <= month) {
+            curr = day;
+            tot = month;
+        } else {
+            curr = month;
+            tot = day;
+        }
+        return { currentInstallment: curr, totalInstallments: tot };
+    }
+
     const valStr = value.toString().trim();
     if (!valStr) {
         return { currentInstallment: 1, totalInstallments: 12 };
     }
 
-    let curr = 1;
-    let tot = 12;
+    // Standardize separators ("7 de 9", "7-9", "7 / 9")
+    const cleaned = valStr.replace(/\s+de\s+/gi, '/').replace(/-/g, '/');
 
-    if (valStr.includes('/')) {
-        const parts = valStr.split('/').map(p => p.trim());
-        if (parts.length >= 3) {
-            curr = parseInt(parts[0].replace(/\D/g, ''), 10);
-            tot = parseInt(parts[1].replace(/\D/g, ''), 10);
-        } else {
-            curr = parseInt(parts[0].replace(/\D/g, ''), 10);
-            tot = parseInt(parts[1].replace(/\D/g, ''), 10);
-            if (isNaN(tot) || tot <= 0) tot = 12;
+    if (cleaned.includes('/')) {
+        const parts = cleaned.split('/').map(p => p.trim());
+        curr = parseInt(parts[0].replace(/\D/g, ''), 10);
+        tot = parseInt(parts[1].replace(/\D/g, ''), 10);
+        if (isNaN(tot) || tot <= 0) tot = 12;
 
-            if (!isNaN(curr) && curr > tot) {
-                const currStr = parts[0].replace(/\D/g, '');
-                if (currStr.length >= 2) {
-                    const firstDigit = parseInt(currStr.slice(0, 1), 10);
-                    const restDigits = parseInt(currStr.slice(1), 10);
-                    if (!isNaN(firstDigit) && !isNaN(restDigits) && firstDigit <= restDigits) {
-                        curr = firstDigit;
-                        tot = restDigits;
-                    } else if (!isNaN(firstDigit) && firstDigit <= tot) {
-                        curr = firstDigit;
-                    }
+        if (!isNaN(curr) && curr > tot) {
+            const currStr = parts[0].replace(/\D/g, '');
+            if (currStr.length >= 2) {
+                const firstDigit = parseInt(currStr.slice(0, 1), 10);
+                const restDigits = parseInt(currStr.slice(1), 10);
+                if (!isNaN(firstDigit) && !isNaN(restDigits) && firstDigit <= restDigits) {
+                    curr = firstDigit;
+                    tot = restDigits;
+                } else if (!isNaN(firstDigit) && firstDigit <= tot) {
+                    curr = firstDigit;
                 }
             }
         }
     } else {
-        const num = parseInt(valStr.replace(/\D/g, ''), 10);
+        const num = parseInt(cleaned.replace(/\D/g, ''), 10);
         curr = isNaN(num) || num <= 0 ? 1 : num;
         tot = 12;
     }
@@ -1031,7 +1046,8 @@ function parseOfficialSpreadsheetRows(rowsData) {
     const OFFICIAL_MAPPED_KEYS = [
         'sucursal', 'solicitud', 'apellido', 'apenom', 'segmento',
         'domicilio', 'teléfono', 'telefono', 'celular', 'zona', 'localidad',
-        'cpos', 'vencido', 'punitorios', 'vence', 'minicuota', 'día pago',
+        'cpos', 'vencido', 'punitorios', 'vence', 'minicuota', 'mini cuota',
+        'mini_cuota', 'cuota', 'nro cuota', 'cuota actual', 'día pago',
         'dia pago', 'nro documento', 'garante'
     ];
 
@@ -1064,7 +1080,7 @@ function parseOfficialSpreadsheetRows(rowsData) {
         const vencidoRaw = getRowValue(row, ['vencido', 'monto cuota', 'monto_cuota', 'monto', 'importe']);
         const punitoriosRaw = getRowValue(row, ['punitorios', 'punitorio']);
         const venceRaw = getRowValue(row, ['vence', 'vencimiento', 'fecha vence']);
-        const minicuotaRaw = getRowValue(row, ['minicuota', 'cuota']);
+        const minicuotaRaw = getRowValue(row, ['minicuota', 'mini cuota', 'mini_cuota', 'cuota', 'nro cuota', 'cuota actual']);
         const diaPagoRaw = getRowValue(row, ['día pago', 'dia pago', 'dia_pago', 'día_pago', 'sueldo']);
         const dniRaw = getRowValue(row, ['nro documento', 'nro_documento', 'documento', 'dni']);
         const garante = getRowValue(row, ['garante']);
@@ -2353,11 +2369,31 @@ function showReceiptModal(clientId, paymentId) {
     const punitoriosWaived = targetPayment.punitoriosWaived || 0;
     const totalCobrado = targetPayment.amount;
 
+    const isPartial = targetPayment.paymentType === 'partial';
+
+    // Calculate previous and remaining for this cuota
+    let previousPaidBeforeThis = 0;
+    if (Array.isArray(targetClient.payments)) {
+        targetClient.payments.forEach(p => {
+            const sameInst = (p.installmentNumber || '').toString().trim() === (targetPayment.installmentNumber || '').toString().trim();
+            const samePeriod = p.periodMonth === targetPayment.periodMonth;
+            if (sameInst && samePeriod && p.id !== targetPayment.id && p.createdAt < targetPayment.createdAt) {
+                previousPaidBeforeThis += (p.amount || 0);
+            }
+        });
+    }
+
+    const totalAccumulatedSoFar = previousPaidBeforeThis + totalCobrado;
+    const totalRequired = baseCuota + Math.max(0, punitoriosGen - punitoriosWaived);
+    const pendingBalance = Math.max(0, totalRequired - totalAccumulatedSoFar);
+
+    const receiptTitle = isPartial ? 'COMPROBANTE DE PAGO A CUENTA' : 'COMPROBANTE DE PAGO';
+
     receiptContainer.innerHTML = `
         <div class="receipt-header-box">
             <h1>Palmares</h1>
             <div class="sub-brand">Efectivo en el Acto</div>
-            <div class="receipt-title">COMPROBANTE DE PAGO</div>
+            <div class="receipt-title">${receiptTitle}</div>
             <div class="receipt-number-badge">COMPROBANTE N.° ${escapeHtml(targetPayment.receiptNumber || '00000001')}</div>
         </div>
 
@@ -2372,15 +2408,28 @@ function showReceiptModal(clientId, paymentId) {
         <div class="receipt-row"><span>Período / Mes:</span> <strong>${escapeHtml(formatMonthYear(targetPayment.periodMonth))}</strong></div>
         <div class="receipt-row"><span>Número de Cuota:</span> <strong>Cuota ${escapeHtml(targetPayment.installmentNumber)}</strong></div>
         <div class="receipt-row"><span>Medio de Pago:</span> <strong>${escapeHtml(targetPayment.paymentMethod || 'Efectivo')}</strong></div>
-        <div class="receipt-row"><span>Importe de Cuota:</span> <strong>${formatCurrency(baseCuota)}</strong></div>
+        <div class="receipt-row"><span>Monto Total de Cuota:</span> <strong>${formatCurrency(baseCuota)}</strong></div>
 
+        ${previousPaidBeforeThis > 0 ? `<div class="receipt-row"><span>Pagos a Cuenta Previos:</span> <strong>+ ${formatCurrency(previousPaidBeforeThis)}</strong></div>` : ''}
         ${punitoriosGen > 0 ? `<div class="receipt-row"><span>Punitorios por Mora:</span> <strong>+ ${formatCurrency(punitoriosGen)}</strong></div>` : ''}
         ${punitoriosWaived > 0 ? `<div class="receipt-row" style="color:#198754;"><span>Bonificación / Condonación Punitorios:</span> <strong>- ${formatCurrency(punitoriosWaived)}</strong></div>` : ''}
 
         <div class="receipt-row total-row">
-            <span>TOTAL COBRADO:</span>
+            <span>MONTO ENTREGADO / COBRADO:</span>
             <span>${formatCurrency(totalCobrado)}</span>
         </div>
+
+        ${pendingBalance > 0 ? `
+            <div class="receipt-row" style="margin-top:8px; padding:6px 10px; background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; color:#991b1b; font-weight:700;">
+                <span>SALDO PENDIENTE CUOTA:</span>
+                <span>${formatCurrency(pendingBalance)}</span>
+            </div>
+        ` : `
+            <div class="receipt-row" style="margin-top:8px; padding:6px 10px; background:#f0fdf4; border:1px solid #86efac; border-radius:6px; color:#166534; font-weight:700;">
+                <span>ESTADO CUOTA:</span>
+                <span>TOTALMENTE CANCELADA</span>
+            </div>
+        `}
 
         ${targetPayment.notes ? `<div class="receipt-section-title"><i class="fas fa-sticky-note"></i> Observaciones</div><div class="receipt-row"><span>${escapeHtml(targetPayment.notes)}</span></div>` : ''}
 
@@ -2773,6 +2822,21 @@ function handleDelete() {
 // PAYMENT & HISTORY
 // ========================================
 
+function getPreviousPaidForInstallment(client, periodMonth, installmentNumber) {
+    if (!client || !Array.isArray(client.payments)) return 0;
+    const instStr = `${installmentNumber || 1}`;
+    let total = 0;
+    client.payments.forEach(p => {
+        const pInst = (p.installmentNumber || '').toString().trim();
+        const isSameInst = pInst === instStr || pInst.startsWith(instStr + '/') || pInst.startsWith(instStr + ' ');
+        const isSamePeriod = !periodMonth || !p.periodMonth || p.periodMonth === periodMonth;
+        if (isSameInst && isSamePeriod) {
+            total += (p.amount || 0);
+        }
+    });
+    return total;
+}
+
 function openPaymentModal(id) {
     const client = clients.find(c => c.id === id);
     if (!client) return;
@@ -2810,12 +2874,24 @@ function openPaymentModal(id) {
         if (promiseLinkedAlert) promiseLinkedAlert.style.display = 'none';
     }
 
-    els.paymentType.value = 'total';
     const methodSelect = document.getElementById('paymentMethodSelect');
     if (methodSelect) methodSelect.value = foundPromise ? foundPromise.paymentMethod : 'Efectivo';
 
-    els.paidAmount.value = client.installmentAmount ? client.installmentAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+    const periodMonth = client.periodMonth || getToday().substring(0, 7);
+    const instNum = client.installmentNumber || 1;
+    const previousPaid = getPreviousPaidForInstallment(client, periodMonth, instNum);
+    const remainingCuota = Math.max(0, client.installmentAmount - previousPaid);
+
+    const defaultAmountToPay = (previousPaid > 0 && remainingCuota > 0) ? remainingCuota : client.installmentAmount;
+
+    els.paidAmount.value = defaultAmountToPay ? defaultAmountToPay.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
     els.amountGiven.value = '';
+
+    if (previousPaid > 0 || client.paymentStatus === 'partial') {
+        els.paymentType.value = remainingCuota > 0 ? 'partial' : 'total';
+    } else {
+        els.paymentType.value = 'total';
+    }
 
     const punitoriosGeneratedEl = document.getElementById('punitoriosGenerated');
     const punitoriosWaivedEl = document.getElementById('punitoriosWaived');
@@ -2828,11 +2904,11 @@ function openPaymentModal(id) {
     if (paymentTimeEl) paymentTimeEl.value = getCurrentTime();
     if (paymentUserEl && !paymentUserEl.value) paymentUserEl.value = 'Cobrador';
 
-    els.hasPaid.checked = client.paymentStatus === 'paid' || true;
+    els.hasPaid.checked = client.paymentStatus === 'paid';
     els.isOverdue.checked = client.isOverdue;
     els.daysOverdue.value = client.daysOverdue || 1;
     els.paymentDate.value = getToday();
-    els.paymentPeriodMonth.value = client.periodMonth || getToday().substring(0, 7);
+    els.paymentPeriodMonth.value = periodMonth;
     els.paymentInstallmentNumber.value = instText;
     els.paymentNotes.value = '';
 
@@ -2845,41 +2921,69 @@ function openPaymentModal(id) {
 function updatePaymentCalculationBox(client) {
     if (!els.paymentCalculationBox) return;
 
-    const pType = els.paymentType.value;
-    const baseCuota = parseCurrencyInput(els.paidAmount.value) || client.installmentAmount || 0;
-    const given = parseCurrencyInput(els.amountGiven.value);
+    const periodMonth = els.paymentPeriodMonth ? els.paymentPeriodMonth.value : (client.periodMonth || getToday().substring(0, 7));
+    const instNum = client.installmentNumber || 1;
+    const previousPaid = getPreviousPaidForInstallment(client, periodMonth, instNum);
+
+    const fullCuota = client.installmentAmount || 0;
+    const enteredPaid = parseCurrencyInput(els.paidAmount.value);
+    const enteredGiven = parseCurrencyInput(els.amountGiven.value);
+
     const isOverdueChecked = els.isOverdue ? els.isOverdue.checked : client.isOverdue;
     const daysOverdueVal = els.daysOverdue ? (parseInt(els.daysOverdue.value) || 0) : client.daysOverdue;
 
-    const punitoriosGen = isOverdueChecked && daysOverdueVal > 0 ? calculatePunitorios(baseCuota, daysOverdueVal, client.penaltyRate) : 0;
+    const punitoriosGen = isOverdueChecked && daysOverdueVal > 0 ? calculatePunitorios(fullCuota, daysOverdueVal, client.penaltyRate) : 0;
     const punitoriosWaived = parseCurrencyInput(document.getElementById('punitoriosWaived') ? document.getElementById('punitoriosWaived').value : 0);
     const netPenalty = Math.max(0, punitoriosGen - punitoriosWaived);
-    const totalToCollect = baseCuota + netPenalty;
 
-    let html = `<div class="calc-row"><span>Importe Cuota:</span> <strong>${formatCurrency(baseCuota)}</strong></div>`;
+    const totalRequiredForFull = fullCuota + netPenalty;
+    const remainingToComplete = Math.max(0, totalRequiredForFull - previousPaid);
+
+    let currentCollected = 0;
+    if (enteredGiven > 0 && enteredGiven <= remainingToComplete) {
+        currentCollected = enteredGiven;
+    } else if (enteredPaid > 0) {
+        currentCollected = enteredPaid;
+    } else if (enteredGiven > 0) {
+        currentCollected = enteredGiven;
+    }
+
+    const newAccumulatedTotal = previousPaid + currentCollected;
+    const pendingBalance = Math.max(0, totalRequiredForFull - newAccumulatedTotal);
+
+    let html = `<div class="calc-row"><span>Monto Total de Cuota:</span> <strong>${formatCurrency(fullCuota)}</strong></div>`;
+
+    if (previousPaid > 0) {
+        html += `<div class="calc-row" style="color:#0284c7; font-weight:600;"><span>Pagos a cuenta previos para esta cuota:</span> <strong>+ ${formatCurrency(previousPaid)}</strong></div>`;
+    }
 
     if (punitoriosGen > 0) {
         html += `<div class="calc-row penalty"><span>Punitorios Generados (${daysOverdueVal} días, ${client.penaltyRate || 1.0}%/día):</span> <strong>+ ${formatCurrency(punitoriosGen)}</strong></div>`;
         if (punitoriosWaived > 0) {
-            html += `<div class="calc-row" style="color:var(--success);"><span>Punitorios Condonados/Bonificados:</span> <strong>- ${formatCurrency(punitoriosWaived)}</strong></div>`;
+            html += `<div class="calc-row" style="color:var(--success);"><span>Punitorios Condonados:</span> <strong>- ${formatCurrency(punitoriosWaived)}</strong></div>`;
         }
-        html += `<div class="calc-row total"><span>Total efectivamente a Cobrar:</span> <strong>${formatCurrency(totalToCollect)}</strong></div>`;
     }
 
-    if (pType === 'partial') {
-        const remaining = totalToCollect - baseCuota;
-        html += `<div class="calc-row partial"><span>Pago Parcial - Saldo Pendiente:</span> <strong>${formatCurrency(remaining > 0 ? remaining : 0)}</strong></div>`;
-    } else if (pType === 'advance') {
-        html += `<div class="calc-row advance"><span>Adelanto de Cuota:</span> <strong>Se acredita para el período siguiente</strong></div>`;
+    html += `<div class="calc-row total"><span>Monto Entregado / Cobrado en esta transacción:</span> <strong style="color:var(--success); font-size:1.05rem;">${formatCurrency(currentCollected)}</strong></div>`;
+
+    if (previousPaid > 0) {
+        html += `<div class="calc-row"><span>Total Acumulado Abonado:</span> <strong>${formatCurrency(newAccumulatedTotal)}</strong></div>`;
     }
 
-    if (given > 0) {
-        const change = given - totalToCollect;
-        if (change >= 0) {
-            html += `<div class="calc-row change"><span>Vuelto a entregar al cliente:</span> <strong>${formatCurrency(change)}</strong></div>`;
-        } else {
-            html += `<div class="calc-row pending"><span>Falta para completar cobro:</span> <strong>${formatCurrency(Math.abs(change))}</strong></div>`;
-        }
+    if (pendingBalance > 0) {
+        html += `<div class="calc-row partial" style="background:rgba(239,68,68,0.12); padding:8px 12px; border-radius:6px; border:1px solid rgba(239,68,68,0.35); margin-top:6px;">
+            <span style="color:#ef4444; font-weight:700;"><i class="fas fa-exclamation-circle"></i> PAGO A CUENTA — Saldo Pendiente:</span>
+            <strong style="color:#ef4444; font-size:1.1rem;">${formatCurrency(pendingBalance)}</strong>
+        </div>`;
+    } else {
+        html += `<div class="calc-row" style="background:rgba(34,197,94,0.12); padding:8px 12px; border-radius:6px; border:1px solid rgba(34,197,94,0.35); margin-top:6px;">
+            <span style="color:#22c55e; font-weight:700;"><i class="fas fa-check-circle"></i> CUOTA PAGADA EN SU TOTALIDAD</span>
+        </div>`;
+    }
+
+    if (enteredGiven > 0 && enteredGiven > remainingToComplete) {
+        const change = enteredGiven - remainingToComplete;
+        html += `<div class="calc-row change"><span>Vuelto a entregar al cliente:</span> <strong>${formatCurrency(change)}</strong></div>`;
     }
 
     els.paymentCalculationBox.innerHTML = html;
@@ -2921,15 +3025,14 @@ function handleSavePayment(e) {
     const client = clients.find(c => c.id === id);
     if (!client) return;
 
-    const pType = els.paymentType.value;
+    let pType = els.paymentType.value;
     const methodSelect = document.getElementById('paymentMethodSelect');
     const paymentMethodVal = methodSelect ? methodSelect.value : 'Efectivo';
-    const hasPaid = els.hasPaid.checked;
     const isOverdue = els.isOverdue.checked;
     const daysOverdue = parseInt(els.daysOverdue.value) || 0;
     const paymentDate = els.paymentDate.value || getToday();
     const paymentTime = document.getElementById('paymentTime') ? document.getElementById('paymentTime').value : getCurrentTime();
-    const paidAmountVal = parseCurrencyInput(els.paidAmount.value) || client.installmentAmount || 0;
+    const paidAmountVal = parseCurrencyInput(els.paidAmount.value);
     const amountGivenVal = parseCurrencyInput(els.amountGiven.value);
     const payPeriodMonth = els.paymentPeriodMonth.value || client.periodMonth || paymentDate.substring(0, 7);
     const payInstallmentNumber = els.paymentInstallmentNumber.value.trim() || `${client.installmentNumber || 1}`;
@@ -2938,41 +3041,31 @@ function handleSavePayment(e) {
 
     const punitoriosGen = parseCurrencyInput(document.getElementById('punitoriosGenerated') ? document.getElementById('punitoriosGenerated').value : 0);
     const punitoriosWaived = parseCurrencyInput(document.getElementById('punitoriosWaived') ? document.getElementById('punitoriosWaived').value : 0);
+    const netPenalty = Math.max(0, punitoriosGen - punitoriosWaived);
 
-    // Duplicate Check
-    const isDuplicate = client.payments.some(p => p.date === paymentDate && p.periodMonth === payPeriodMonth && p.installmentNumber === payInstallmentNumber);
-    if (isDuplicate) {
-        const confirmDup = confirm(`ADVERTENCIA: Ya existe un pago registrado para ${client.name} el día ${formatDate(paymentDate)} para la cuota ${payInstallmentNumber} del período ${payPeriodMonth}.\n\n¿Desea registrar este pago de todas formas?`);
-        if (!confirmDup) return;
+    // Exact amount delivered / collected in this transaction
+    let currentCollected = 0;
+    if (amountGivenVal > 0 && paidAmountVal > 0) {
+        currentCollected = Math.min(amountGivenVal, paidAmountVal);
+    } else if (amountGivenVal > 0) {
+        currentCollected = amountGivenVal;
+    } else if (paidAmountVal > 0) {
+        currentCollected = paidAmountVal;
+    } else {
+        currentCollected = client.installmentAmount || 0;
     }
 
-    // Calculate total accumulated payments for this installment/period
-    const netPenaltyToPay = Math.max(0, punitoriosGen - punitoriosWaived);
-    const effectiveCollectedForThisTransaction = paidAmountVal + netPenaltyToPay;
-
-    let previousPaymentsTotal = 0;
-    if (Array.isArray(client.payments)) {
-        client.payments.forEach(p => {
-            if (p.periodMonth === payPeriodMonth && p.installmentNumber === payInstallmentNumber) {
-                previousPaymentsTotal += (p.amount || 0);
-            }
-        });
-    }
-
-    const totalPaidSoFar = previousPaymentsTotal + effectiveCollectedForThisTransaction;
-    const fullCuotaTheoreticalTotal = (client.installmentAmount || paidAmountVal) + netPenaltyToPay;
+    const previousPaid = getPreviousPaidForInstallment(client, payPeriodMonth, client.installmentNumber);
+    const fullCuotaTotal = (client.installmentAmount || currentCollected) + netPenalty;
+    const totalAccumulated = previousPaid + currentCollected;
 
     let status = 'pending';
-    if (pType === 'partial') {
-        if (totalPaidSoFar >= fullCuotaTheoreticalTotal) {
-            status = 'paid';
-        } else {
-            status = 'partial';
-        }
-    } else if (hasPaid || pType === 'total' || pType === 'advance') {
+    if (totalAccumulated >= fullCuotaTotal && fullCuotaTotal > 0) {
         status = 'paid';
-    } else if (isOverdue) {
-        status = 'overdue';
+        pType = 'total';
+    } else {
+        status = 'partial';
+        pType = 'partial';
     }
 
     client.paymentStatus = status;
@@ -2981,8 +3074,8 @@ function handleSavePayment(e) {
 
     if (payPeriodMonth) client.periodMonth = payPeriodMonth;
 
-    // Advance installment count if total or advance paid
-    if ((hasPaid || pType === 'total' || pType === 'advance') && typeof client.installmentNumber === 'number') {
+    // Advance installment count ONLY when cuota is fully paid
+    if (status === 'paid' && typeof client.installmentNumber === 'number') {
         if (!client.totalInstallments || client.installmentNumber < client.totalInstallments) {
             client.installmentNumber += 1;
         }
@@ -3008,11 +3101,11 @@ function handleSavePayment(e) {
         time: paymentTime,
         periodMonth: payPeriodMonth,
         installmentNumber: payInstallmentNumber,
-        installmentAmount: client.installmentAmount || paidAmountVal,
+        installmentAmount: client.installmentAmount || currentCollected,
         punitorios: punitoriosGen,
         punitoriosWaived: punitoriosWaived,
-        amount: paidAmountVal + Math.max(0, punitoriosGen - punitoriosWaived),
-        amountGiven: amountGivenVal,
+        amount: currentCollected,
+        amountGiven: amountGivenVal || currentCollected,
         paymentMethod: paymentMethodVal,
         paymentType: pType,
         daysOverdue: daysOverdue,
@@ -3041,7 +3134,7 @@ function handleSavePayment(e) {
     renderClients();
 
     closeModalFn(els.paymentModal);
-    showToast(`Pago registrado con éxito (Comprobante N.° ${receiptNum})`, 'success');
+    showToast(`Pago ${pType === 'partial' ? 'a cuenta' : 'total'} registrado con éxito (Comprobante N.° ${receiptNum})`, 'success');
 
     // Show printable receipt modal automatically
     showReceiptModal(client.id, newPayment.id);
