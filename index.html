@@ -51,38 +51,42 @@
 
         <!-- Dashboard de Cartera Mensual & Atención Hoy -->
         <section class="daily-dashboard" id="dailyDashboard">
-            <div class="daily-dashboard-header">
-                <h2><i class="fas fa-chart-pie"></i> CARTERA MENSUAL — <span id="portfolioPeriodLabel">TODOS LOS MESES</span></h2>
-                <span class="dashboard-date" id="currentDashboardDate">--/--/----</span>
+            <!-- CARTERA MENSUAL (Colapsable por defecto) -->
+            <div class="portfolio-collapse-wrapper">
+                <button type="button" id="togglePortfolioKpisBtn" class="portfolio-collapse-btn">
+                    <span><i class="fas fa-chart-pie"></i> CARTERA MENSUAL — <span id="portfolioPeriodLabel">TODOS LOS MESES</span></span>
+                    <span id="togglePortfolioKpisText"><i class="fas fa-chevron-down"></i> Ver resumen de cartera</span>
+                </button>
+                <div id="portfolioKpisSection" style="display: none; margin-top: 0.75rem;">
+                    <div class="portfolio-kpis-grid">
+                        <div class="kpi-card kpi-total">
+                            <span class="kpi-label">Importe Cartera</span>
+                            <div class="kpi-val" id="dashMonthTotalAmount">$ 0,00</div>
+                            <span class="kpi-sub" id="dashMonthTotalClientsCount">0 clientes/cuotas</span>
+                        </div>
+                        <div class="kpi-card kpi-collected">
+                            <span class="kpi-label">Importe Cobrado</span>
+                            <div class="kpi-val" id="dashMonthCollectedAmount">$ 0,00</div>
+                            <span class="kpi-sub" id="dashMonthPaidCount">0 pagados</span>
+                        </div>
+                        <div class="kpi-card kpi-pending">
+                            <span class="kpi-label">Importe Pendiente</span>
+                            <div class="kpi-val" id="dashMonthPendingAmount">$ 0,00</div>
+                            <span class="kpi-sub" id="dashMonthPendingCount">0 pendientes</span>
+                        </div>
+                        <div class="kpi-card kpi-recovery">
+                            <span class="kpi-label">% Recuperación</span>
+                            <div class="kpi-val" id="dashMonthRecoveryRate">0,0%</div>
+                            <span class="kpi-sub" id="dashMonthPartialCount">0 pagos parciales</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- KPIs Globales de la Cartera Mensual -->
-            <div class="portfolio-kpis-grid">
-                <div class="kpi-card kpi-total">
-                    <span class="kpi-label">Importe Cartera</span>
-                    <div class="kpi-val" id="dashMonthTotalAmount">$ 0,00</div>
-                    <span class="kpi-sub" id="dashMonthTotalClientsCount">0 clientes/cuotas</span>
-                </div>
-                <div class="kpi-card kpi-collected">
-                    <span class="kpi-label">Importe Cobrado</span>
-                    <div class="kpi-val" id="dashMonthCollectedAmount">$ 0,00</div>
-                    <span class="kpi-sub" id="dashMonthPaidCount">0 pagados</span>
-                </div>
-                <div class="kpi-card kpi-pending">
-                    <span class="kpi-label">Importe Pendiente</span>
-                    <div class="kpi-val" id="dashMonthPendingAmount">$ 0,00</div>
-                    <span class="kpi-sub" id="dashMonthPendingCount">0 pendientes</span>
-                </div>
-                <div class="kpi-card kpi-recovery">
-                    <span class="kpi-label">% Recuperación</span>
-                    <div class="kpi-val" id="dashMonthRecoveryRate">0,0%</div>
-                    <span class="kpi-sub" id="dashMonthPartialCount">0 pagos parciales</span>
-                </div>
-            </div>
-
-            <div class="daily-dashboard-header" style="margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.2); padding-top: 0.75rem;">
+            <!-- ATENCIÓN HOY (En primer plano por defecto) -->
+            <div class="daily-dashboard-header" style="margin-top: 0.5rem;">
                 <h2><i class="fas fa-fire"></i> ATENCIÓN HOY (Acciones Rápidas)</h2>
-                <span class="dashboard-subtitle">Filtra clientes al instante según estado diario</span>
+                <span class="dashboard-date" id="currentDashboardDate">--/--/----</span>
             </div>
 
             <div class="daily-grid">
@@ -172,6 +176,10 @@
                 <i class="fas fa-list-ol"></i>
                 <span>Resumen</span>
             </button>
+            <button class="btn-secondary" id="dailyRouteBtn" style="display: none;" title="Abrir ruta de paradas en Google Maps" aria-label="Ver ruta del día">
+                <i class="fas fa-route"></i>
+                <span>Ruta del Día</span>
+            </button>
             <button class="btn-primary" id="addClientBtn">
                 <i class="fas fa-plus"></i>
                 <span>Nuevo</span>
@@ -184,9 +192,9 @@
                 <label for="sortBySelect">Ordenar Por</label>
                 <div class="select-wrapper">
                     <select id="sortBySelect" class="form-control-sm">
+                        <option value="status-asc" selected>Estado (Atrasados primero)</option>
                         <option value="paymentDay-asc">Día de cobro (Menor a Mayor)</option>
                         <option value="name-asc">Nombre (A-Z)</option>
-                        <option value="status-asc">Estado (Atrasados primero)</option>
                         <option value="installment-desc">Monto Cuota (Mayor a Menor)</option>
                     </select>
                 </div>
@@ -472,6 +480,12 @@
                     </div>
                 </div>
 
+                <div id="openGestionWaContainer" style="display:none; margin-bottom: 1rem; text-align: center;">
+                    <button type="button" id="openGestionWaBtn" class="btn-secondary" style="width: 100%; color: #15803d; border-color: #bbf7d0; background: #dcfce7;">
+                        <i class="fab fa-whatsapp"></i> Abrir WhatsApp
+                    </button>
+                </div>
+
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" id="cancelGestionBtn">Cancelar</button>
                     <button type="submit" class="btn-primary">Guardar Gestión</button>
@@ -599,12 +613,8 @@
 
                 <div class="form-row">
                     <div class="form-group flex-1">
-                        <label for="paymentType">Tipo de Pago *</label>
-                        <select id="paymentType">
-                            <option value="total">Pago Total de Cuota</option>
-                            <option value="partial">Pago Parcial</option>
-                            <option value="advance">Adelanto de Cuota</option>
-                        </select>
+                        <label for="amountGiven">Importe Entregado ($) *</label>
+                        <input type="text" id="amountGiven" inputmode="decimal" placeholder="Ej: 120.000,00">
                     </div>
                     <div class="form-group flex-1">
                         <label for="paymentMethodSelect">Medio de Pago *</label>
@@ -618,91 +628,103 @@
                     </div>
                 </div>
 
-                <div class="form-row">
-                    <div class="form-group flex-1">
-                        <label for="paidAmount">Importe de Cuota ($)</label>
-                        <input type="text" id="paidAmount" inputmode="decimal" placeholder="Ej: 100.444,44">
-                    </div>
-                    <div class="form-group flex-1">
-                        <label for="amountGiven">Importe Entregado ($)</label>
-                        <input type="text" id="amountGiven" inputmode="decimal" placeholder="Ej: 120.000,00">
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group flex-1">
-                        <label for="punitoriosGenerated">Punitorios Calculados ($)</label>
-                        <input type="text" id="punitoriosGenerated" inputmode="decimal" placeholder="0.00" readonly>
-                    </div>
-                    <div class="form-group flex-1">
-                        <label for="punitoriosWaived">Punitorios Condonados ($)</label>
-                        <input type="text" id="punitoriosWaived" inputmode="decimal" placeholder="Ej: 0,00">
-                        <span class="input-hint">Bonificación / Condonación parcial o total</span>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group flex-1">
-                        <label for="paymentDate">Fecha de Pago *</label>
-                        <input type="date" id="paymentDate" required>
-                    </div>
-                    <div class="form-group flex-1">
-                        <label for="paymentTime">Hora de Pago *</label>
-                        <input type="time" id="paymentTime" required>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group flex-1">
-                        <label for="paymentPeriodMonth">Mes a Abonar / Período *</label>
-                        <input type="month" id="paymentPeriodMonth" required>
-                    </div>
-                    <div class="form-group flex-1">
-                        <label for="paymentInstallmentNumber">N° Cuota *</label>
-                        <input type="text" id="paymentInstallmentNumber" placeholder="Ej: 3 o 3/12" required>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group flex-1">
-                        <label for="paymentUser">Usuario / Registrado por</label>
-                        <input type="text" id="paymentUser" value="Cobrador" placeholder="Nombre de usuario">
-                    </div>
-                </div>
-
                 <div class="payment-calculation-box" id="paymentCalculationBox">
                     <!-- Calculated dynamically (Punitorios, Vuelto / Saldo pendiente) -->
                 </div>
 
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="hasPaid">
-                        <span class="checkmark"></span>
-                        <span class="label-text">¿Pagó el período actual?</span>
-                    </label>
-                </div>
-                <div class="form-group" id="overdueGroup">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="isOverdue">
-                        <span class="checkmark"></span>
-                        <span class="label-text">¿Marcar atraso manual?</span>
-                    </label>
-                </div>
-                <div class="form-group" id="daysOverdueGroup" style="display:none;">
-                    <label for="daysOverdue">Días de atraso</label>
-                    <input type="number" id="daysOverdue" min="1" value="1" inputmode="numeric">
+                <div style="margin-bottom: 1rem; text-align: center;">
+                    <button type="button" id="togglePaymentDetailsBtn" class="btn-secondary btn-sm" style="width: 100%;">
+                        <i class="fas fa-chevron-down"></i> <span id="togglePaymentDetailsText">Ver más detalles</span>
+                    </button>
                 </div>
 
-                <div class="form-group">
-                    <label for="paymentNotes">Observaciones del Pago</label>
-                    <input type="text" id="paymentNotes" placeholder="Ej: Pago parcial, transferencia realizada por familiar, etc.">
-                </div>
+                <div id="paymentMoreDetails" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="paymentType">Tipo de Pago *</label>
+                            <select id="paymentType">
+                                <option value="total">Pago Total de Cuota</option>
+                                <option value="partial">Pago Parcial</option>
+                                <option value="advance">Adelanto de Cuota</option>
+                            </select>
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="paidAmount">Importe de Cuota ($)</label>
+                            <input type="text" id="paidAmount" inputmode="decimal" placeholder="Ej: 100.444,44">
+                        </div>
+                    </div>
 
-                <!-- Payment History Container -->
-                <div class="payment-history-section">
-                    <h3><i class="fas fa-history"></i> Historial de Pagos del Cliente</h3>
-                    <div id="paymentHistoryList" class="payment-history-list">
-                        <!-- Rendered via JS -->
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="punitoriosGenerated">Punitorios Calculados ($)</label>
+                            <input type="text" id="punitoriosGenerated" inputmode="decimal" placeholder="0.00" readonly>
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="punitoriosWaived">Punitorios Condonados ($)</label>
+                            <input type="text" id="punitoriosWaived" inputmode="decimal" placeholder="Ej: 0,00">
+                            <span class="input-hint">Bonificación / Condonación parcial o total</span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="paymentDate">Fecha de Pago *</label>
+                            <input type="date" id="paymentDate" required>
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="paymentTime">Hora de Pago *</label>
+                            <input type="time" id="paymentTime" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="paymentPeriodMonth">Mes a Abonar / Período *</label>
+                            <input type="month" id="paymentPeriodMonth" required>
+                        </div>
+                        <div class="form-group flex-1">
+                            <label for="paymentInstallmentNumber">N° Cuota *</label>
+                            <input type="text" id="paymentInstallmentNumber" placeholder="Ej: 3 o 3/12" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="paymentUser">Usuario / Registrado por</label>
+                            <input type="text" id="paymentUser" value="Cobrador" placeholder="Nombre de usuario">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="hasPaid">
+                            <span class="checkmark"></span>
+                            <span class="label-text">¿Pagó el período actual?</span>
+                        </label>
+                    </div>
+                    <div class="form-group" id="overdueGroup">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="isOverdue">
+                            <span class="checkmark"></span>
+                            <span class="label-text">¿Marcar atraso manual?</span>
+                        </label>
+                    </div>
+                    <div class="form-group" id="daysOverdueGroup" style="display:none;">
+                        <label for="daysOverdue">Días de atraso</label>
+                        <input type="number" id="daysOverdue" min="1" value="1" inputmode="numeric">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="paymentNotes">Observaciones del Pago</label>
+                        <input type="text" id="paymentNotes" placeholder="Ej: Pago parcial, transferencia realizada por familiar, etc.">
+                    </div>
+
+                    <!-- Payment History Container -->
+                    <div class="payment-history-section">
+                        <h3><i class="fas fa-history"></i> Historial de Pagos del Cliente</h3>
+                        <div id="paymentHistoryList" class="payment-history-list">
+                            <!-- Rendered via JS -->
+                        </div>
                     </div>
                 </div>
 
@@ -732,6 +754,9 @@
             <div class="modal-footer form-actions no-print">
                 <button type="button" class="btn-primary" id="printReceiptBtn">
                     <i class="fas fa-print"></i> Imprimir Comprobante
+                </button>
+                <button type="button" class="btn-secondary" id="shareReceiptWaBtn">
+                    <i class="fab fa-whatsapp"></i> Compartir por WhatsApp
                 </button>
                 <button type="button" class="btn-secondary" id="closeReceiptBtn">Cerrar</button>
             </div>
