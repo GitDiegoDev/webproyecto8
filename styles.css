@@ -1218,7 +1218,8 @@ form {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.375rem 0.5rem;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
     border-bottom: 1px solid var(--border);
     font-size: 0.8125rem;
 }
@@ -1227,19 +1228,42 @@ form {
     border-bottom: none;
 }
 
-.history-item .hist-date {
-    color: var(--text-secondary);
+.history-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
 }
 
-.history-item .hist-amount {
+.history-item-info .hist-date {
     font-weight: 700;
-    color: var(--success);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
 }
 
-.history-item .hist-note {
+.history-item-info .hist-period {
+    color: var(--text-secondary);
     font-size: 0.75rem;
+}
+
+.history-item-info .hist-note {
+    font-size: 0.725rem;
     color: var(--text-muted);
     font-style: italic;
+}
+
+.history-item-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.history-item-actions .hist-amount {
+    font-weight: 800;
+    color: var(--success);
+    font-size: 0.875rem;
 }
 
 .no-history {
@@ -1724,6 +1748,55 @@ form {
     background: #d1e7dd;
     color: #0f5132;
     border: 1px solid #badbcc;
+}
+
+.promise-actions-row {
+    display: flex;
+    gap: 0.375rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--border);
+    flex-wrap: wrap;
+}
+
+.btn-promise-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.725rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.btn-promise-status:hover {
+    background: var(--bg);
+}
+
+.btn-promise-status.btn-fulfilled:hover,
+.btn-promise-status.btn-fulfilled.active {
+    background: var(--success-light);
+    color: var(--success);
+    border-color: var(--success);
+}
+
+.btn-promise-status.btn-broken:hover,
+.btn-promise-status.btn-broken.active {
+    background: var(--danger-light);
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+.btn-promise-status.btn-pending:hover,
+.btn-promise-status.btn-pending.active {
+    background: var(--warning-light);
+    color: #b45309;
+    border-color: var(--warning);
 }
 
 /* ========================================
