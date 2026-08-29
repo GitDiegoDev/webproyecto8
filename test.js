@@ -35,7 +35,7 @@ global.localStorage = {
 };
 
 // Evaluate app.js logic in global context
-eval(jsCode.replace(/^let clients =/m, 'var clients ='));
+eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient ='));
 
 console.log('--- STARTING PALMARES AUTOMATED TEST SUITE ---');
 
@@ -539,6 +539,46 @@ runTest('12. Non-Destructive Update of Client with Address and Official Fields',
     assert.strictEqual(updatedClient.gestiones.length, 1, 'Gestión preserved');
     assert.strictEqual(updatedClient.promises.length, 1, 'Promise preserved');
     assert.strictEqual(updatedClient.payments.length, 1, 'Payment preserved');
+});
+
+runTest('16. Editable Address Fields in Form & Schema Sanitization', () => {
+    const client = {
+        id: 'c_addr_edit',
+        name: 'Carlos Perez',
+        type: 'jubilado',
+        paymentDay: 10,
+        domicilio: 'Calle Falsa 123',
+        localidad: 'Oberá',
+        zona: 'Zona Norte',
+        cpos: '3360'
+    };
+    sanitizeClientSchema(client);
+    assert.strictEqual(client.domicilio, 'Calle Falsa 123');
+    assert.strictEqual(client.localidad, 'Oberá');
+    assert.strictEqual(client.zona, 'Zona Norte');
+    assert.strictEqual(client.cpos, '3360');
+});
+
+runTest('17. Google Maps Query Excludes Zona and Includes CPOS', () => {
+    selectedAddressClient = {
+        name: 'Maria Gomez',
+        domicilio: 'Av. Corrientes 500',
+        localidad: 'Posadas',
+        cpos: '3300',
+        zona: 'Zona Centro'
+    };
+
+    let openedUrl = '';
+    global.window.open = (url) => {
+        openedUrl = url;
+    };
+
+    openAddressInGoogleMaps();
+
+    assert(openedUrl.includes('Av.%20Corrientes%20500'), 'Includes domicilio');
+    assert(openedUrl.includes('3300'), 'Includes cpos');
+    assert(openedUrl.includes('Posadas'), 'Includes localidad');
+    assert(!openedUrl.includes('Zona%20Centro'), 'Excludes internal zona');
 });
 
 runTest('13. Import Preview Modal Opens With .open Class', () => {
