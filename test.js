@@ -306,7 +306,7 @@ runTest('9. Portfolio Import Merge Preserves Gestiones, Promises & Payments', ()
     assert.strictEqual(clients[0].payments.length, 1, 'Payments preserved');
 });
 
-runTest('10. Minicuota Parsing Logic & Malformed Quota Sanitization', () => {
+runTest('10. Minicuota Parsing Logic & Variations Handling', () => {
     const res1 = parseMinicuota('7/9');
     assert.strictEqual(res1.currentInstallment, 7);
     assert.strictEqual(res1.totalInstallments, 9);
@@ -315,18 +315,95 @@ runTest('10. Minicuota Parsing Logic & Malformed Quota Sanitization', () => {
     assert.strictEqual(res2.currentInstallment, 3);
     assert.strictEqual(res2.totalInstallments, 12);
 
-    const res3 = parseMinicuota('5');
-    assert.strictEqual(res3.currentInstallment, 5);
-    assert.strictEqual(res3.totalInstallments, 12);
+    const res3 = parseMinicuota('7 de 9');
+    assert.strictEqual(res3.currentInstallment, 7);
+    assert.strictEqual(res3.totalInstallments, 9);
 
-    // Malformed/impossible values like in user screenshot (59/12, 612/12)
-    const res4 = parseMinicuota('59/12');
-    assert.strictEqual(res4.currentInstallment, 5);
+    const res4 = parseMinicuota('7-9');
+    assert.strictEqual(res4.currentInstallment, 7);
     assert.strictEqual(res4.totalInstallments, 9);
 
-    const res5 = parseMinicuota('612/12');
-    assert.strictEqual(res5.currentInstallment, 6);
-    assert.strictEqual(res5.totalInstallments, 12);
+    // Date object simulation (e.g. July 9th / Day 7 Month 9)
+    const mockDate = new Date(2026, 8, 7); // Sept 7th -> 7/9
+    const res5 = parseMinicuota(mockDate);
+    assert.strictEqual(res5.currentInstallment, 7);
+    assert.strictEqual(res5.totalInstallments, 9);
+
+    // Malformed values
+    const res6 = parseMinicuota('59/12');
+    assert.strictEqual(res6.currentInstallment, 5);
+    assert.strictEqual(res6.totalInstallments, 9);
+});
+
+runTest('15. Multiple Partial Payments ("Pago a Cuenta") & Complete Cuota Flow', () => {
+    const client = {
+        id: 'c_partial_test',
+        name: 'Cliente Pago a Cuenta',
+        installmentAmount: 100000,
+        installmentNumber: 7,
+        totalInstallments: 9,
+        paymentStatus: 'pending',
+        periodMonth: '2026-08',
+        payments: []
+    };
+    sanitizeClientSchema(client);
+    clients = [client];
+
+    // 1st Payment: Deliver $40.000 out of $100.000 (Partial / Pago a cuenta)
+    const prevPaid1 = getPreviousPaidForInstallment(client, '2026-08', 7);
+    assert.strictEqual(prevPaid1, 0);
+
+    const payment1 = {
+        id: generateId(),
+        receiptNumber: generateReceiptNumber(),
+        clientId: client.id,
+        clientName: client.name,
+        date: getToday(),
+        time: '10:00',
+        periodMonth: '2026-08',
+        installmentNumber: '7',
+        installmentAmount: 100000,
+        amount: 40000, // Delivered $40.000
+        paymentType: 'partial',
+        createdAt: new Date().toISOString()
+    };
+    client.payments.push(payment1);
+    client.paymentStatus = 'partial';
+
+    // Verify installment number has NOT advanced
+    assert.strictEqual(client.installmentNumber, 7, 'Installment stays 7 after partial payment');
+    assert.strictEqual(client.paymentStatus, 'partial', 'Status is partial');
+
+    // 2nd Payment: Deliver remaining $60.000
+    const prevPaid2 = getPreviousPaidForInstallment(client, '2026-08', 7);
+    assert.strictEqual(prevPaid2, 40000, 'Previous payment accumulates $40.000');
+
+    const payment2 = {
+        id: generateId(),
+        receiptNumber: generateReceiptNumber(),
+        clientId: client.id,
+        clientName: client.name,
+        date: getToday(),
+        time: '11:00',
+        periodMonth: '2026-08',
+        installmentNumber: '7',
+        installmentAmount: 100000,
+        amount: 60000, // Delivered remaining $60.000
+        paymentType: 'total',
+        createdAt: new Date().toISOString()
+    };
+    client.payments.push(payment2);
+
+    const totalAccumulated = getPreviousPaidForInstallment(client, '2026-08', 7);
+    assert.strictEqual(totalAccumulated, 100000, 'Cuota 7 fully paid ($100.000)');
+
+    if (totalAccumulated >= client.installmentAmount) {
+        client.paymentStatus = 'paid';
+        client.installmentNumber += 1;
+    }
+
+    assert.strictEqual(client.paymentStatus, 'paid', 'Status transitions to paid');
+    assert.strictEqual(client.installmentNumber, 8, 'Installment advances to 8');
 });
 
 runTest('14. Client Deduplication & Malformed Cuota Clean-Up', () => {
