@@ -534,7 +534,9 @@ function updateOverdueStatuses() {
     const currentMonthStr = getToday().substring(0, 7);
 
     clients.forEach(client => {
-        // Check if paid for current month
+        const clientPeriod = client.periodMonth || currentMonthStr;
+
+        // Check if paid for current or corresponding month
         const hasPaidThisMonth = client.paymentStatus === 'paid' && client.lastPaymentDate && client.lastPaymentDate.startsWith(currentMonthStr);
 
         if (hasPaidThisMonth) {
@@ -544,7 +546,29 @@ function updateOverdueStatuses() {
             return;
         }
 
-        // If unpaid and current date is past client payment day
+        // Future period month -> not overdue yet (should be pending)
+        if (clientPeriod > currentMonthStr) {
+            if (client.paymentStatus !== 'paid' && client.paymentStatus !== 'partial') {
+                client.paymentStatus = 'pending';
+            }
+            client.isOverdue = false;
+            client.daysOverdue = 0;
+            return;
+        }
+
+        // Past period month -> overdue if not paid or partial
+        if (clientPeriod < currentMonthStr) {
+            if (client.paymentStatus !== 'paid' && client.paymentStatus !== 'partial') {
+                client.paymentStatus = 'overdue';
+            }
+            if (client.paymentStatus !== 'paid') {
+                client.isOverdue = true;
+                client.daysOverdue = Math.max(1, currentDay - client.paymentDay + 30);
+            }
+            return;
+        }
+
+        // Current period month
         if (currentDay > client.paymentDay) {
             if (client.paymentStatus !== 'partial') {
                 client.paymentStatus = 'overdue';

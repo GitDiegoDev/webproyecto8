@@ -162,6 +162,34 @@ runTest('5. Detect Overdue Promise (Promesa Vencida)', () => {
     assert.strictEqual(client.promises[0].status, 'vencida');
 });
 
+runTest('18. Future Period Client Status Initialized as Pending', () => {
+    const currentMonth = getToday().substring(0, 7);
+    const [yearStr, monthStr] = currentMonth.split('-');
+    const currentYear = parseInt(yearStr, 10);
+    const currentMonthNum = parseInt(monthStr, 10);
+
+    const nextMonthNum = currentMonthNum === 12 ? 1 : currentMonthNum + 1;
+    const nextYear = currentMonthNum === 12 ? currentYear + 1 : currentYear;
+    const futurePeriodMonth = `${nextYear}-${String(nextMonthNum).padStart(2, '0')}`;
+
+    const futureClient = {
+        id: 'c_future_1',
+        name: 'Cliente Periodo Futuro',
+        periodMonth: futurePeriodMonth,
+        paymentDay: 1, // Day 1 will be lower than current day if current day > 1
+        paymentStatus: 'pending',
+        isOverdue: false,
+        daysOverdue: 0
+    };
+
+    clients = [futureClient];
+    updateOverdueStatuses();
+
+    assert.strictEqual(futureClient.paymentStatus, 'pending', 'Future period client stays pending');
+    assert.strictEqual(futureClient.isOverdue, false, 'Future period client is not overdue');
+    assert.strictEqual(futureClient.daysOverdue, 0, 'Future period client has 0 days overdue');
+});
+
 runTest('6. Register Payment & Fulfill Promise & Mark Cuota Paid', () => {
     const todayStr = getToday();
     const client = {
