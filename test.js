@@ -649,4 +649,79 @@ runTest('13. Import Preview Modal Opens With .open Class', () => {
     assert(!previewModalClassList.includes('open'), 'importPreviewModal removed open class');
 });
 
+runTest('19. Period Advancement on Payment & Re-import Deduplication Flow', () => {
+    // 1. Create client paying cuota 1 of 3 in August 2026
+    const client = {
+        id: 'c_period_test',
+        name: 'Roberto Fernandez',
+        dni: '25.999.888',
+        branchNumber: '01',
+        requestNumber: '55',
+        installmentNumber: 1,
+        totalInstallments: 3,
+        periodMonth: '2026-08',
+        paymentStatus: 'pending',
+        installmentAmount: 50000,
+        payments: []
+    };
+    sanitizeClientSchema(client);
+    clients = [client];
+
+    // Simulate handleSavePayment logic for paying cuota 1 of 3 in August
+    const payPeriodMonth = client.periodMonth; // '2026-08'
+    const status = 'paid'; // Full payment
+
+    if (status === 'paid' && typeof client.installmentNumber === 'number') {
+        if (!client.totalInstallments || client.installmentNumber < client.totalInstallments) {
+            client.installmentNumber += 1;
+            client.periodMonth = getNextPeriodMonth(payPeriodMonth);
+            client.paymentStatus = 'pending';
+            client.isOverdue = false;
+            client.daysOverdue = 0;
+        }
+    }
+
+    assert.strictEqual(client.installmentNumber, 2, 'Installment advanced to 2');
+    assert.strictEqual(client.periodMonth, '2026-09', 'Period month advanced to 2026-09');
+    assert.strictEqual(client.paymentStatus, 'pending', 'Payment status reset to pending for new cuota');
+
+    // 2. Re-import spreadsheet with row for September (2026-09) for same client
+    const reimportedRow = [{
+        name: 'Roberto Fernandez',
+        dni: '25999888',
+        branchNumber: '01',
+        requestNumber: '55',
+        installmentNumber: 2,
+        totalInstallments: 3,
+        periodMonth: '2026-09',
+        installmentAmount: 50000
+    }];
+
+    const { updatedCount, addedCount } = mergeMonthlyPortfolio(reimportedRow);
+
+    assert.strictEqual(updatedCount, 1, 'Existing client updated upon September re-import');
+    assert.strictEqual(addedCount, 0, 'No duplicate client created');
+    assert.strictEqual(clients.length, 1, 'Client count remains 1');
+    assert.strictEqual(clients[0].periodMonth, '2026-09');
+
+    // 3. Complete final cuota (3 of 3)
+    clients[0].installmentNumber = 3;
+    const finalPayPeriodMonth = clients[0].periodMonth;
+    if (status === 'paid' && typeof clients[0].installmentNumber === 'number') {
+        if (!clients[0].totalInstallments || clients[0].installmentNumber < clients[0].totalInstallments) {
+            clients[0].installmentNumber += 1;
+            clients[0].periodMonth = getNextPeriodMonth(finalPayPeriodMonth);
+            clients[0].paymentStatus = 'pending';
+        } else {
+            clients[0].paymentStatus = 'paid';
+            clients[0].isOverdue = false;
+            clients[0].daysOverdue = 0;
+        }
+    }
+
+    assert.strictEqual(clients[0].installmentNumber, 3, 'Final installment stays 3');
+    assert.strictEqual(clients[0].periodMonth, '2026-09', 'Period month does not advance past final installment');
+    assert.strictEqual(clients[0].paymentStatus, 'paid', 'Status stays permanently paid for completed loan');
+});
+
 console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);

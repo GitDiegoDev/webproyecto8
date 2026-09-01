@@ -276,6 +276,23 @@ function calculatePunitorios(installmentAmount, daysOverdue, penaltyRate = 1.0) 
     return Math.round(dailyInterest * 100) / 100;
 }
 
+function getNextPeriodMonth(periodMonthStr) {
+    if (!periodMonthStr || typeof periodMonthStr !== 'string' || !periodMonthStr.includes('-')) {
+        return getToday().substring(0, 7);
+    }
+    const [yearStr, monthStr] = periodMonthStr.split('-');
+    let year = parseInt(yearStr, 10);
+    let month = parseInt(monthStr, 10);
+    if (isNaN(year) || isNaN(month)) return periodMonthStr;
+
+    month += 1;
+    if (month > 12) {
+        month = 1;
+        year += 1;
+    }
+    return `${year}-${String(month).padStart(2, '0')}`;
+}
+
 function formatMonthYear(yyyyMm) {
     if (!yyyyMm || typeof yyyyMm !== 'string' || !yyyyMm.includes('-')) return yyyyMm || '';
     const [year, month] = yyyyMm.split('-');
@@ -536,19 +553,15 @@ function updateOverdueStatuses() {
     clients.forEach(client => {
         const clientPeriod = client.periodMonth || currentMonthStr;
 
-        // Check if paid for current or corresponding month
-        const hasPaidThisMonth = client.paymentStatus === 'paid' && client.lastPaymentDate && client.lastPaymentDate.startsWith(currentMonthStr);
-
-        if (hasPaidThisMonth) {
-            client.paymentStatus = 'paid';
+        if (client.paymentStatus === 'paid') {
             client.isOverdue = false;
             client.daysOverdue = 0;
             return;
         }
 
-        // Future period month -> not overdue yet (should be pending)
+        // Future period month -> not overdue yet
         if (clientPeriod > currentMonthStr) {
-            if (client.paymentStatus !== 'paid' && client.paymentStatus !== 'partial') {
+            if (client.paymentStatus !== 'partial') {
                 client.paymentStatus = 'pending';
             }
             client.isOverdue = false;
@@ -556,13 +569,20 @@ function updateOverdueStatuses() {
             return;
         }
 
-        // Past period month -> overdue if not paid or partial
+        // Past period month -> overdue if not partial
         if (clientPeriod < currentMonthStr) {
-            if (client.paymentStatus !== 'paid' && client.paymentStatus !== 'partial') {
+            if (client.paymentStatus !== 'partial') {
                 client.paymentStatus = 'overdue';
             }
-            if (client.paymentStatus !== 'paid') {
-                client.isOverdue = true;
+            client.isOverdue = true;
+
+            const [pYear, pMonth] = clientPeriod.split('-').map(n => parseInt(n, 10));
+            if (!isNaN(pYear) && !isNaN(pMonth)) {
+                const dueDate = new Date(pYear, pMonth - 1, client.paymentDay || 10);
+                const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const diffTime = todayDate.getTime() - dueDate.getTime();
+                client.daysOverdue = Math.max(1, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+            } else {
                 client.daysOverdue = Math.max(1, currentDay - client.paymentDay + 30);
             }
             return;
@@ -575,8 +595,10 @@ function updateOverdueStatuses() {
             }
             client.isOverdue = true;
             client.daysOverdue = currentDay - client.paymentDay;
-        } else if (client.paymentStatus !== 'overdue' && client.paymentStatus !== 'partial') {
-            client.paymentStatus = 'pending';
+        } else {
+            if (client.paymentStatus !== 'partial') {
+                client.paymentStatus = 'pending';
+            }
             client.isOverdue = false;
             client.daysOverdue = 0;
         }
@@ -1839,7 +1861,9 @@ function renderClientCard(client) {
 
     // Fused Single Status / Urgency Indicator
     let combinedStatusLabel = statusConfig.label;
-    if (client.paymentStatus === 'overdue' && client.daysOverdue > 0) {
+    if (client.paymentStatus === 'paid' && client.installmentNumber === client.totalInstallments) {
+        combinedStatusLabel = `✅ Préstamo Completado`;
+    } else if (client.paymentStatus === 'overdue' && client.daysOverdue > 0) {
         combinedStatusLabel = `🔴 Atrasado - ${client.daysOverdue} ${client.daysOverdue === 1 ? 'día' : 'días'}`;
     } else if (client.paymentStatus === 'paid') {
         combinedStatusLabel = `🟢 Pagado`;
@@ -1881,6 +1905,9 @@ function renderClientCard(client) {
 
     let instText = client.totalInstallments ? `${client.installmentNumber || 1} de ${client.totalInstallments}` : `${client.installmentNumber || 1}`;
     let instBadgeHtml = `<span class="badge badge-installment" title="Número de cuota"><i class="fas fa-list-ol"></i> Cuota ${escapeHtml(instText)}</span>`;
+    if (client.paymentStatus === 'paid' && client.installmentNumber === client.totalInstallments) {
+        instBadgeHtml += `<span class="badge" style="background:#d1e7dd;color:#0f5132;font-weight:700;" title="Préstamo Completado"><i class="fas fa-check-double"></i> Préstamo Completado</span>`;
+    }
     let monthLabel = formatMonthYear(client.periodMonth);
     let monthBadgeHtml = monthLabel ? `<span class="badge badge-period-month ${client.paymentStatus === 'overdue' ? 'overdue' : ''}" title="Mes del período"><i class="fas fa-calendar-alt"></i> Mes: ${escapeHtml(monthLabel)}</span>` : '';
 
@@ -3330,17 +3357,24 @@ function handleSavePayment(e) {
         pType = 'partial';
     }
 
-    client.paymentStatus = status;
-    client.isOverdue = (status === 'overdue');
-    client.daysOverdue = (status === 'overdue') ? daysOverdue : 0;
-
-    if (payPeriodMonth) client.periodMonth = payPeriodMonth;
-
-    // Advance installment count ONLY when cuota is fully paid
     if (status === 'paid' && typeof client.installmentNumber === 'number') {
         if (!client.totalInstallments || client.installmentNumber < client.totalInstallments) {
             client.installmentNumber += 1;
+            client.periodMonth = getNextPeriodMonth(payPeriodMonth);
+            client.paymentStatus = 'pending';
+            client.isOverdue = false;
+            client.daysOverdue = 0;
+        } else {
+            if (payPeriodMonth) client.periodMonth = payPeriodMonth;
+            client.paymentStatus = 'paid';
+            client.isOverdue = false;
+            client.daysOverdue = 0;
         }
+    } else {
+        if (payPeriodMonth) client.periodMonth = payPeriodMonth;
+        client.paymentStatus = status;
+        client.isOverdue = (status === 'overdue');
+        client.daysOverdue = (status === 'overdue') ? daysOverdue : 0;
     }
 
     const receiptNum = generateReceiptNumber();
