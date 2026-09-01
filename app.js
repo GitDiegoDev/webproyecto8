@@ -278,19 +278,27 @@ function calculatePunitorios(installmentAmount, daysOverdue, penaltyRate = 1.0) 
 
 function getNextPeriodMonth(periodMonthStr) {
     if (!periodMonthStr || typeof periodMonthStr !== 'string' || !periodMonthStr.includes('-')) {
-        return getToday().substring(0, 7);
+        return periodMonthStr;
     }
     const [yearStr, monthStr] = periodMonthStr.split('-');
     let year = parseInt(yearStr, 10);
     let month = parseInt(monthStr, 10);
-    if (isNaN(year) || isNaN(month)) return periodMonthStr;
-
     month += 1;
     if (month > 12) {
         month = 1;
         year += 1;
     }
     return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function calcularDiasVencidoDesdePeriodo(periodMonthStr, paymentDay, todayDate) {
+    const [yearStr, monthStr] = periodMonthStr.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const dueDate = new Date(year, month - 1, paymentDay || 1);
+    const todayMidnight = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
+    const diffMs = todayMidnight - dueDate;
+    return Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
 }
 
 function formatMonthYear(yyyyMm) {
@@ -551,54 +559,43 @@ function updateOverdueStatuses() {
     const currentMonthStr = getToday().substring(0, 7);
 
     clients.forEach(client => {
+        if (client.paymentStatus === 'partial') return; // no tocar pagos parciales
+
         const clientPeriod = client.periodMonth || currentMonthStr;
 
-        if (client.paymentStatus === 'paid') {
+        // Préstamo saldado por completo (última cuota ya pagada): nunca vuelve a vencer
+        const isLoanCompleted = client.paymentStatus === 'paid'
+            && client.totalInstallments
+            && client.installmentNumber >= client.totalInstallments;
+        if (isLoanCompleted) {
             client.isOverdue = false;
             client.daysOverdue = 0;
             return;
         }
 
-        // Future period month -> not overdue yet
         if (clientPeriod > currentMonthStr) {
-            if (client.paymentStatus !== 'partial') {
-                client.paymentStatus = 'pending';
-            }
+            // Ya pagó y quedó con el período adelantado: todavía no corresponde cobrarle
+            client.paymentStatus = 'pending';
             client.isOverdue = false;
             client.daysOverdue = 0;
             return;
         }
 
-        // Past period month -> overdue if not partial
         if (clientPeriod < currentMonthStr) {
-            if (client.paymentStatus !== 'partial') {
-                client.paymentStatus = 'overdue';
-            }
+            // Quedó atrás uno o más meses sin pagar
+            client.paymentStatus = 'overdue';
             client.isOverdue = true;
-
-            const [pYear, pMonth] = clientPeriod.split('-').map(n => parseInt(n, 10));
-            if (!isNaN(pYear) && !isNaN(pMonth)) {
-                const dueDate = new Date(pYear, pMonth - 1, client.paymentDay || 10);
-                const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                const diffTime = todayDate.getTime() - dueDate.getTime();
-                client.daysOverdue = Math.max(1, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
-            } else {
-                client.daysOverdue = Math.max(1, currentDay - client.paymentDay + 30);
-            }
+            client.daysOverdue = calcularDiasVencidoDesdePeriodo(clientPeriod, client.paymentDay, today);
             return;
         }
 
-        // Current period month
+        // Período actual: misma lógica de día que ya existía antes
         if (currentDay > client.paymentDay) {
-            if (client.paymentStatus !== 'partial') {
-                client.paymentStatus = 'overdue';
-            }
+            client.paymentStatus = 'overdue';
             client.isOverdue = true;
             client.daysOverdue = currentDay - client.paymentDay;
         } else {
-            if (client.paymentStatus !== 'partial') {
-                client.paymentStatus = 'pending';
-            }
+            client.paymentStatus = 'pending';
             client.isOverdue = false;
             client.daysOverdue = 0;
         }
@@ -3357,24 +3354,26 @@ function handleSavePayment(e) {
         pType = 'partial';
     }
 
-    if (status === 'paid' && typeof client.installmentNumber === 'number') {
-        if (!client.totalInstallments || client.installmentNumber < client.totalInstallments) {
-            client.installmentNumber += 1;
-            client.periodMonth = getNextPeriodMonth(payPeriodMonth);
-            client.paymentStatus = 'pending';
-            client.isOverdue = false;
-            client.daysOverdue = 0;
-        } else {
-            if (payPeriodMonth) client.periodMonth = payPeriodMonth;
-            client.paymentStatus = 'paid';
-            client.isOverdue = false;
-            client.daysOverdue = 0;
-        }
+    client.isOverdue = (status === 'overdue');
+    client.daysOverdue = (status === 'overdue') ? daysOverdue : 0;
+
+    if (payPeriodMonth) client.periodMonth = payPeriodMonth;
+
+    const isLastInstallment = status === 'paid'
+        && typeof client.installmentNumber === 'number'
+        && client.totalInstallments
+        && client.installmentNumber >= client.totalInstallments;
+
+    if (status === 'paid' && typeof client.installmentNumber === 'number' && !isLastInstallment) {
+        // Avanza a la cuota siguiente y adelanta el período al mes que viene.
+        // El estado vuelve a 'pending' porque la cuota NUEVA todavía no está pagada
+        // (el pago que se acaba de hacer ya quedó guardado en client.payments).
+        client.installmentNumber += 1;
+        client.periodMonth = getNextPeriodMonth(payPeriodMonth);
+        client.paymentStatus = 'pending';
     } else {
-        if (payPeriodMonth) client.periodMonth = payPeriodMonth;
+        // Última cuota saldada, o pago parcial: se deja el status calculated arriba.
         client.paymentStatus = status;
-        client.isOverdue = (status === 'overdue');
-        client.daysOverdue = (status === 'overdue') ? daysOverdue : 0;
     }
 
     const receiptNum = generateReceiptNumber();
