@@ -649,4 +649,151 @@ runTest('13. Import Preview Modal Opens With .open Class', () => {
     assert(!previewModalClassList.includes('open'), 'importPreviewModal removed open class');
 });
 
+runTest('19. Period Advancement on Payment & Re-import Deduplication Flow', () => {
+    // 1. Create client paying cuota 1 of 3 in August 2026
+    const client = {
+        id: 'c_period_test',
+        name: 'Roberto Fernandez',
+        dni: '25.999.888',
+        branchNumber: '01',
+        requestNumber: '55',
+        installmentNumber: 1,
+        totalInstallments: 3,
+        periodMonth: '2026-08',
+        paymentStatus: 'pending',
+        installmentAmount: 50000,
+        payments: []
+    };
+    sanitizeClientSchema(client);
+    clients = [client];
+
+    // Simulate handleSavePayment logic for paying cuota 1 of 3 in August
+    const payPeriodMonth = client.periodMonth; // '2026-08'
+    const status = 'paid'; // Full payment
+
+    const isLastInstallment = status === 'paid'
+        && typeof client.installmentNumber === 'number'
+        && client.totalInstallments
+        && client.installmentNumber >= client.totalInstallments;
+
+    if (status === 'paid' && typeof client.installmentNumber === 'number' && !isLastInstallment) {
+        client.installmentNumber += 1;
+        client.periodMonth = getNextPeriodMonth(payPeriodMonth);
+        client.paymentStatus = 'pending';
+    } else {
+        client.paymentStatus = status;
+    }
+
+    assert.strictEqual(client.installmentNumber, 2, 'Installment advanced to 2');
+    assert.strictEqual(client.periodMonth, '2026-09', 'Period month advanced to 2026-09');
+    assert.strictEqual(client.paymentStatus, 'pending', 'Payment status reset to pending for new cuota');
+
+    // 2. Re-import spreadsheet with row for September (2026-09) for same client
+    const reimportedRow = [{
+        name: 'Roberto Fernandez',
+        dni: '25999888',
+        branchNumber: '01',
+        requestNumber: '55',
+        installmentNumber: 2,
+        totalInstallments: 3,
+        periodMonth: '2026-09',
+        installmentAmount: 50000
+    }];
+
+    const { updatedCount, addedCount } = mergeMonthlyPortfolio(reimportedRow);
+
+    assert.strictEqual(updatedCount, 1, 'Existing client updated upon September re-import');
+    assert.strictEqual(addedCount, 0, 'No duplicate client created');
+    assert.strictEqual(clients.length, 1, 'Client count remains 1');
+    assert.strictEqual(clients[0].periodMonth, '2026-09');
+
+    // 3. Complete final cuota (3 of 3)
+    clients[0].installmentNumber = 3;
+    const finalPayPeriodMonth = clients[0].periodMonth;
+    const isLastInstallmentFinal = status === 'paid'
+        && typeof clients[0].installmentNumber === 'number'
+        && clients[0].totalInstallments
+        && clients[0].installmentNumber >= clients[0].totalInstallments;
+
+    if (status === 'paid' && typeof clients[0].installmentNumber === 'number' && !isLastInstallmentFinal) {
+        clients[0].installmentNumber += 1;
+        clients[0].periodMonth = getNextPeriodMonth(finalPayPeriodMonth);
+        clients[0].paymentStatus = 'pending';
+    } else {
+        clients[0].paymentStatus = status;
+    }
+
+    assert.strictEqual(clients[0].installmentNumber, 3, 'Final installment stays 3');
+    assert.strictEqual(clients[0].periodMonth, '2026-09', 'Period month does not advance past final installment');
+    assert.strictEqual(clients[0].paymentStatus, 'paid', 'Status stays permanently paid for completed loan');
+});
+
+runTest('20. Exact Regression Test - Paid Cuota Advances & Transitions to Overdue in Next Month', () => {
+    // Client with cuota 2 of 6, payment day 10
+    const client = {
+        id: 'c_reg_20',
+        name: 'Juan Perez',
+        dni: '30.111.222',
+        installmentNumber: 2,
+        totalInstallments: 6,
+        periodMonth: '2026-08',
+        paymentDay: 10,
+        paymentStatus: 'pending',
+        installmentAmount: 25000,
+        payments: []
+    };
+    sanitizeClientSchema(client);
+    clients = [client];
+
+    // Simulate paying cuota 2 in August
+    const payPeriodMonth = '2026-08';
+    const status = 'paid';
+
+    const isLastInstallment = status === 'paid'
+        && typeof client.installmentNumber === 'number'
+        && client.totalInstallments
+        && client.installmentNumber >= client.totalInstallments;
+
+    if (status === 'paid' && typeof client.installmentNumber === 'number' && !isLastInstallment) {
+        client.installmentNumber += 1;
+        client.periodMonth = getNextPeriodMonth(payPeriodMonth);
+        client.paymentStatus = 'pending';
+    } else {
+        client.paymentStatus = status;
+    }
+
+    assert.strictEqual(client.installmentNumber, 3, 'Installment number advanced to 3');
+    assert.strictEqual(client.periodMonth, '2026-09', 'Period month advanced to 2026-09');
+    assert.strictEqual(client.paymentStatus, 'pending', 'Status is pending immediately after payment');
+
+    // Simulate calling updateOverdueStatuses() on Sept 20th 2026 (currentDay=20 > paymentDay=10)
+    // Mock getToday() to return '2026-09-20' and global Date constructor
+    const origGetToday = getToday;
+    getToday = () => '2026-09-20';
+
+    const RealDate = Date;
+    global.Date = class extends RealDate {
+        constructor(...args) {
+            if (args.length === 0) {
+                return new RealDate('2026-09-20T12:00:00');
+            }
+            return new RealDate(...args);
+        }
+        static now() {
+            return new RealDate('2026-09-20T12:00:00').getTime();
+        }
+    };
+
+    try {
+        updateOverdueStatuses();
+        assert.strictEqual(client.paymentStatus, 'overdue', 'Status transitions to overdue on Sept 20th');
+        assert.strictEqual(client.isOverdue, true, 'isOverdue is true');
+        assert.strictEqual(client.daysOverdue, 10, 'daysOverdue is 10 (Sept 20 - Sept 10)');
+        assert.notStrictEqual(client.paymentStatus, 'paid', 'Never remains stuck in paid status');
+    } finally {
+        getToday = origGetToday;
+        global.Date = RealDate;
+    }
+});
+
 console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);
