@@ -809,6 +809,8 @@ runTest('21. Gestiones History Panel Rendering, Grouping & Filtering', () => {
         gestionsHistoryModal: { style: {}, classList: { _c: {}, add: function(c) { this._c[c] = true; }, remove: function(c) { delete this._c[c]; } } },
         gestionsGroupedContainer: { innerHTML: '' },
         gestionsTodaySummary: { innerHTML: '' },
+        gestionsFilterBadge: { textContent: '', style: {} },
+        gestionsFilterToggleBtn: { classList: { _c: {}, add: function(c) { this._c[c] = true; }, remove: function(c) { delete this._c[c]; } } },
         gestFilterClient: { value: '' },
         gestFilterType: { value: 'all' },
         gestFilterResult: { value: 'all' },
@@ -853,15 +855,18 @@ runTest('21. Gestiones History Panel Rendering, Grouping & Filtering', () => {
         assert(elements.gestionsGroupedContainer.innerHTML.includes('Carlos Gomez'), 'Grouped container contains client name');
         assert(elements.gestionsGroupedContainer.innerHTML.includes('PENDIENTE'), 'Contains pending promise status badge');
 
-        // Test filtering by query
+        // Test filtering by query and badge update
         elements.gestFilterClient.value = 'Inexistente';
         renderGestionsHistoryTable();
         assert(elements.gestionsGroupedContainer.innerHTML.includes('No se encontraron gestiones'), 'Shows empty state when query does not match');
+        assert.strictEqual(String(elements.gestionsFilterBadge.textContent), '1', 'Filter badge shows 1 active filter');
+        assert(elements.gestionsFilterToggleBtn.classList._c['has-filters'], 'Toggle button has class has-filters');
 
         // Reset filter
         elements.gestFilterClient.value = '';
         renderGestionsHistoryTable();
         assert(elements.gestionsGroupedContainer.innerHTML.includes('Carlos Gomez'), 'Restores list on clearing filter');
+        assert.strictEqual(elements.gestionsFilterBadge.style.display, 'none', 'Filter badge hidden when no filters active');
 
         // Test pending follow up filter
         elements.gestFilterPendingFollowUp.checked = true;

@@ -2868,12 +2868,41 @@ function renderGestionsHistoryTable() {
 
         summaryEl.innerHTML = `
             <div class="summary-item"><i class="fas fa-calendar-day"></i> Hoy: <strong>${todayCount}</strong> ${todayCount === 1 ? 'gestión' : 'gestiones'}</div>
+            <span class="summary-sep">·</span>
             <div class="summary-item"><i class="fas fa-handshake"></i> Con promesa: <strong>${todayPromises}</strong></div>
+            <span class="summary-sep">·</span>
             <div class="summary-item"><i class="fas fa-clock"></i> Seguimiento pendiente: <strong>${pendingFollowUps}</strong></div>
         `;
     }
 
-    // 3. Filter gestiones
+    // 3. Update filter indicator count
+    let activeFiltersCount = 0;
+    if (qClient) activeFiltersCount++;
+    if (type !== 'all') activeFiltersCount++;
+    if (result !== 'all') activeFiltersCount++;
+    if (fromDate) activeFiltersCount++;
+    if (toDate) activeFiltersCount++;
+    if (pendingFollowUpOnly) activeFiltersCount++;
+
+    const badgeEl = document.getElementById('gestionsFilterBadge');
+    const toggleBtnEl = document.getElementById('gestionsFilterToggleBtn');
+    if (badgeEl) {
+        if (activeFiltersCount > 0) {
+            badgeEl.textContent = activeFiltersCount;
+            badgeEl.style.display = 'inline-flex';
+        } else {
+            badgeEl.style.display = 'none';
+        }
+    }
+    if (toggleBtnEl) {
+        if (activeFiltersCount > 0) {
+            toggleBtnEl.classList.add('has-filters');
+        } else {
+            toggleBtnEl.classList.remove('has-filters');
+        }
+    }
+
+    // 4. Filter gestiones
     let filtered = allGestiones.filter(({ gestion, client, promise }) => {
         if (qClient) {
             const matchesName = (client.name || '').toLowerCase().includes(qClient);
@@ -3837,6 +3866,15 @@ function setupEventListeners() {
 
     const closeGestionsHistoryBtn = document.getElementById('closeGestionsHistoryBtn');
     if (closeGestionsHistoryBtn) closeGestionsHistoryBtn.addEventListener('click', () => closeModalFn(document.getElementById('gestionsHistoryModal')));
+
+    const gestionsFilterToggleBtn = document.getElementById('gestionsFilterToggleBtn');
+    const gestionsFilterPanel = document.getElementById('gestionsFilterPanel');
+    if (gestionsFilterToggleBtn && gestionsFilterPanel) {
+        gestionsFilterToggleBtn.addEventListener('click', () => {
+            gestionsFilterPanel.classList.toggle('open');
+            gestionsFilterToggleBtn.classList.toggle('active');
+        });
+    }
 
     ['gestFilterClient', 'gestFilterType', 'gestFilterResult', 'gestFilterFrom', 'gestFilterTo', 'gestFilterPendingFollowUp'].forEach(id => {
         const el = document.getElementById(id);

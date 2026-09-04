@@ -879,7 +879,15 @@
                 <!-- Injected via JS -->
             </div>
 
-            <div class="history-filter-bar">
+            <div class="gestions-filter-toggle-row">
+                <button type="button" class="btn-secondary btn-sm btn-filter-toggle" id="gestionsFilterToggleBtn">
+                    <i class="fas fa-filter"></i>
+                    <span>Filtrar</span>
+                    <span class="filter-badge" id="gestionsFilterBadge" style="display: none;">0</span>
+                </button>
+            </div>
+
+            <div class="filter-panel history-filter-bar" id="gestionsFilterPanel">
                 <div class="form-row">
                     <div class="form-group flex-2">
                         <input type="text" id="gestFilterClient" placeholder="Buscar por Cliente o DNI...">
