@@ -168,6 +168,10 @@
                 <i class="fas fa-receipt"></i>
                 <span>Pagos</span>
             </button>
+            <button class="btn-secondary" id="gestionsNavBtn" title="Ver Panel de Gestiones del Cobrador" aria-label="Ver Panel de Gestiones del Cobrador">
+                <i class="fas fa-headset"></i>
+                <span>Gestiones</span>
+            </button>
             <button class="btn-secondary" id="exportNavBtn" title="Exportar Pagos para Sistema Oficial" aria-label="Exportar Pagos">
                 <i class="fas fa-file-export"></i>
                 <span>Exportar</span>
@@ -856,6 +860,83 @@
 
             <div class="modal-footer form-actions">
                 <button type="button" class="btn-secondary" id="closeHistoryBtn">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Panel de Gestiones del Cobrador -->
+    <div class="modal" id="gestionsHistoryModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2><i class="fas fa-headset"></i> Panel de Gestiones del Cobrador</h2>
+                <button class="btn-close" id="closeGestionsHistoryModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="gestions-today-summary" id="gestionsTodaySummary">
+                <!-- Injected via JS -->
+            </div>
+
+            <div class="history-filter-bar">
+                <div class="form-row">
+                    <div class="form-group flex-2">
+                        <input type="text" id="gestFilterClient" placeholder="Buscar por Cliente o DNI...">
+                    </div>
+                    <div class="form-group flex-1">
+                        <select id="gestFilterType">
+                            <option value="all">Todos los Tipos</option>
+                            <option value="WhatsApp / mensaje">WhatsApp / mensaje</option>
+                            <option value="Llamada telefónica">Llamada telefónica</option>
+                            <option value="Contacto presencial">Contacto presencial</option>
+                            <option value="Visita del cobrador">Visita del cobrador</option>
+                            <option value="Cliente vino a sucursal">Cliente vino a sucursal</option>
+                            <option value="Contacto con tercero">Contacto con tercero</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                    <div class="form-group flex-1">
+                        <select id="gestFilterResult">
+                            <option value="all">Todos los Resultados</option>
+                            <option value="Prometió pagar">Prometió pagar</option>
+                            <option value="Contactado">Contactado</option>
+                            <option value="Sin respuesta">Sin respuesta</option>
+                            <option value="Pago realizado">Pago realizado</option>
+                            <option value="Pago parcial">Pago parcial</option>
+                            <option value="No puede pagar">No puede pagar</option>
+                            <option value="Solicita reprogramación">Solicita reprogramación</option>
+                            <option value="Solicita refinanciación">Solicita refinanciación</option>
+                            <option value="Dato incorrecto / teléfono incorrecto">Dato incorrecto / teléfono incorrecto</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="gestFilterFrom">Desde</label>
+                        <input type="date" id="gestFilterFrom">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="gestFilterTo">Hasta</label>
+                        <input type="date" id="gestFilterTo">
+                    </div>
+                    <div class="form-group flex-2" style="display: flex; align-items: flex-end; padding-bottom: 4px;">
+                        <label class="checkbox-label" style="margin-bottom:0;">
+                            <input type="checkbox" id="gestFilterPendingFollowUp">
+                            <span class="checkmark"></span>
+                            <span class="label-text">Solo con seguimiento pendiente</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="gestions-grouped-container" id="gestionsGroupedContainer">
+                <!-- Rendered via JS -->
+            </div>
+
+            <div class="modal-footer form-actions">
+                <button type="button" class="btn-secondary" id="closeGestionsHistoryBtn">Cerrar</button>
             </div>
         </div>
     </div>

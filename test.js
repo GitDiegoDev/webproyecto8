@@ -13,11 +13,19 @@ global.document = {
     execCommand: () => {},
     addEventListener: () => {},
     querySelectorAll: () => [],
-    createElement: () => ({
-        style: {},
-        classList: { add: () => {}, remove: () => {} },
-        appendChild: () => {}
-    }),
+    createElement: () => {
+        const el = {
+            style: {},
+            classList: { add: () => {}, remove: () => {} },
+            appendChild: () => {},
+            _text: ''
+        };
+        Object.defineProperty(el, 'textContent', {
+            get() { return this._text; },
+            set(v) { this._text = v; this.innerHTML = String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+        });
+        return el;
+    },
     getElementById: (id) => ({
         value: '',
         textContent: '',
@@ -793,6 +801,76 @@ runTest('20. Exact Regression Test - Paid Cuota Advances & Transitions to Overdu
     } finally {
         getToday = origGetToday;
         global.Date = RealDate;
+    }
+});
+
+runTest('21. Gestiones History Panel Rendering, Grouping & Filtering', () => {
+    const elements = {
+        gestionsHistoryModal: { style: {}, classList: { _c: {}, add: function(c) { this._c[c] = true; }, remove: function(c) { delete this._c[c]; } } },
+        gestionsGroupedContainer: { innerHTML: '' },
+        gestionsTodaySummary: { innerHTML: '' },
+        gestFilterClient: { value: '' },
+        gestFilterType: { value: 'all' },
+        gestFilterResult: { value: 'all' },
+        gestFilterFrom: { value: '' },
+        gestFilterTo: { value: '' },
+        gestFilterPendingFollowUp: { checked: false }
+    };
+
+    const origGetElementById = document.getElementById;
+    document.getElementById = (id) => {
+        if (elements[id]) {
+            if (elements[id].classList && elements[id].classList._c) {
+                elements[id].classList.contains = (c) => !!elements[id].classList._c[c];
+            }
+            return elements[id];
+        }
+        return { value: '', textContent: '', style: {}, classList: { add: () => {}, remove: () => {} }, innerHTML: '' };
+    };
+
+    try {
+        const todayStr = getToday();
+        clients = [
+            {
+                id: 'cli1',
+                name: 'Carlos Gomez',
+                dni: '22333444',
+                gestiones: [
+                    { id: 'g1', date: todayStr, time: '10:00', type: 'Llamada telefónica', result: 'Prometió pagar', observations: 'Prometió pagar hoy', nextAction: 'Llamar si no paga', nextFollowUpDate: todayStr, promiseId: 'p1' },
+                    { id: 'g2', date: '2026-08-15', time: '14:30', type: 'WhatsApp / mensaje', result: 'Contactado', observations: 'Mensaje enviado', nextAction: '', nextFollowUpDate: '', promiseId: null }
+                ],
+                promises: [
+                    { id: 'p1', status: 'pendiente', promisedDate: todayStr, promisedAmount: 50000, gestionId: 'g1' }
+                ]
+            }
+        ];
+
+        openGestionsHistoryModal();
+
+        assert(elements.gestionsHistoryModal.classList._c['open'], 'Modal should have open class');
+        assert(elements.gestionsTodaySummary.innerHTML.includes('Hoy: <strong>1</strong>'), 'Today summary should count 1 gestion today');
+        assert(elements.gestionsTodaySummary.innerHTML.includes('Con promesa: <strong>1</strong>'), 'Today summary should count 1 promise today');
+        assert(elements.gestionsGroupedContainer.innerHTML.includes('Carlos Gomez'), 'Grouped container contains client name');
+        assert(elements.gestionsGroupedContainer.innerHTML.includes('PENDIENTE'), 'Contains pending promise status badge');
+
+        // Test filtering by query
+        elements.gestFilterClient.value = 'Inexistente';
+        renderGestionsHistoryTable();
+        assert(elements.gestionsGroupedContainer.innerHTML.includes('No se encontraron gestiones'), 'Shows empty state when query does not match');
+
+        // Reset filter
+        elements.gestFilterClient.value = '';
+        renderGestionsHistoryTable();
+        assert(elements.gestionsGroupedContainer.innerHTML.includes('Carlos Gomez'), 'Restores list on clearing filter');
+
+        // Test pending follow up filter
+        elements.gestFilterPendingFollowUp.checked = true;
+        renderGestionsHistoryTable();
+        assert(elements.gestionsGroupedContainer.innerHTML.includes('Carlos Gomez'), 'Shows gestion with active follow-up');
+        assert(!elements.gestionsGroupedContainer.innerHTML.includes('Contactado'), 'Does not show gestion without follow-up');
+
+    } finally {
+        document.getElementById = origGetElementById;
     }
 });
 

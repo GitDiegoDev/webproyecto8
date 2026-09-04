@@ -2798,6 +2798,199 @@ function renderHistoryTable() {
     }).join('');
 }
 
+// ========================================
+// PANEL DE GESTIONES DEL COBRADOR
+// ========================================
+
+function openGestionsHistoryModal() {
+    renderGestionsHistoryTable();
+    openModal(document.getElementById('gestionsHistoryModal'));
+}
+
+function formatGroupDateHeader(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return dateStr;
+    const formatted = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const cap = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    return cap.replace(',', '');
+}
+
+function renderGestionsHistoryTable() {
+    const container = document.getElementById('gestionsGroupedContainer');
+    if (!container) return;
+
+    updatePromisesStatuses();
+
+    const qClient = (document.getElementById('gestFilterClient')?.value || '').toLowerCase().trim();
+    const type = document.getElementById('gestFilterType')?.value || 'all';
+    const result = document.getElementById('gestFilterResult')?.value || 'all';
+    const fromDate = document.getElementById('gestFilterFrom')?.value || '';
+    const toDate = document.getElementById('gestFilterTo')?.value || '';
+    const pendingFollowUpOnly = document.getElementById('gestFilterPendingFollowUp')?.checked || false;
+
+    const todayStr = getToday();
+
+    // 1. Flat list of all gestiones across clients
+    let allGestiones = [];
+    clients.forEach(client => {
+        if (Array.isArray(client.gestiones)) {
+            client.gestiones.forEach(gestion => {
+                let promise = null;
+                if (gestion.promiseId && Array.isArray(client.promises)) {
+                    promise = client.promises.find(p => p.id === gestion.promiseId) || null;
+                }
+                allGestiones.push({ gestion, client, promise });
+            });
+        }
+    });
+
+    // 2. Compute TODAY'S fixed header summary
+    const summaryEl = document.getElementById('gestionsTodaySummary');
+    if (summaryEl) {
+        let todayCount = 0;
+        let todayPromises = 0;
+        let pendingFollowUps = 0;
+
+        allGestiones.forEach(({ gestion, promise }) => {
+            if (gestion.date === todayStr) {
+                todayCount++;
+                if (gestion.promiseId || gestion.result === 'Prometió pagar') {
+                    todayPromises++;
+                }
+            }
+            if (gestion.nextFollowUpDate && gestion.nextFollowUpDate >= todayStr) {
+                if (!promise || promise.status === 'pendiente' || promise.status === 'vencida') {
+                    pendingFollowUps++;
+                }
+            }
+        });
+
+        summaryEl.innerHTML = `
+            <div class="summary-item"><i class="fas fa-calendar-day"></i> Hoy: <strong>${todayCount}</strong> ${todayCount === 1 ? 'gestión' : 'gestiones'}</div>
+            <div class="summary-item"><i class="fas fa-handshake"></i> Con promesa: <strong>${todayPromises}</strong></div>
+            <div class="summary-item"><i class="fas fa-clock"></i> Seguimiento pendiente: <strong>${pendingFollowUps}</strong></div>
+        `;
+    }
+
+    // 3. Filter gestiones
+    let filtered = allGestiones.filter(({ gestion, client, promise }) => {
+        if (qClient) {
+            const matchesName = (client.name || '').toLowerCase().includes(qClient);
+            const matchesDni = (client.dni || '').toLowerCase().includes(qClient);
+            if (!matchesName && !matchesDni) return false;
+        }
+        if (type !== 'all' && gestion.type !== type) return false;
+        if (result !== 'all' && gestion.result !== result) return false;
+        if (fromDate && gestion.date < fromDate) return false;
+        if (toDate && gestion.date > toDate) return false;
+
+        if (pendingFollowUpOnly) {
+            if (!gestion.nextFollowUpDate) return false;
+            if (promise) {
+                if (promise.status !== 'pendiente' && promise.status !== 'vencida') {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center;padding:2.5rem 1rem;color:var(--text-muted);">
+                <i class="fas fa-search" style="font-size:2.25rem;margin-bottom:0.75rem;opacity:0.4;"></i>
+                <p>No se encontraron gestiones registradas con los filtros seleccionados.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // 4. Group filtered by gestion.date
+    let groups = {};
+    filtered.forEach(item => {
+        const d = item.gestion.date || 'Sin fecha';
+        if (!groups[d]) groups[d] = [];
+        groups[d].push(item);
+    });
+
+    // Sort dates descending
+    const sortedDates = Object.keys(groups).sort().reverse();
+
+    container.innerHTML = sortedDates.map(dateKey => {
+        const items = groups[dateKey];
+        // Sort items by time descending within each day
+        items.sort((a, b) => (b.gestion.time || '').localeCompare(a.gestion.time || ''));
+
+        const dateHeaderStr = formatGroupDateHeader(dateKey);
+        const countText = `${items.length} ${items.length === 1 ? 'gestión' : 'gestiones'}`;
+
+        const cardsHtml = items.map(({ gestion, client, promise }) => {
+            // Determine status badge
+            let badgeHtml = '';
+            if (promise) {
+                let badgeBg = '#fff3cd';
+                let badgeColor = '#856404';
+                let icon = 'fa-clock';
+                if (promise.status === 'cumplida') {
+                    badgeBg = '#d1e7dd'; badgeColor = '#0f5132'; icon = 'fa-check-circle';
+                } else if (promise.status === 'vencida' || promise.status === 'incumplida') {
+                    badgeBg = '#f8d7da'; badgeColor = '#721c24'; icon = promise.status === 'vencida' ? 'fa-exclamation-circle' : 'fa-times-circle';
+                }
+                badgeHtml = `<span class="timeline-badge" style="background:${badgeBg};color:${badgeColor};"><i class="fas ${icon}"></i> ${promise.status.toUpperCase()}</span>`;
+            } else {
+                badgeHtml = `<span class="timeline-badge" style="background:#e0f2fe;color:#0369a1;"><i class="fas fa-headset"></i> ${escapeHtml(gestion.result)}</span>`;
+            }
+
+            const clientDniStr = client.dni ? ` (DNI: ${escapeHtml(client.dni)})` : '';
+
+            return `
+                <div class="gestion-card">
+                    <div class="gestion-card-header">
+                        <div>
+                            <span class="gestion-card-client">${escapeHtml(client.name)}</span>
+                            <span class="gestion-card-dni">${clientDniStr}</span>
+                        </div>
+                        <span class="gestion-card-time"><i class="fas fa-clock"></i> ${escapeHtml(gestion.time || '')} hs</span>
+                    </div>
+
+                    <div class="gestion-card-meta">
+                        <span class="badge" style="background:#f1f5f9;color:#334155;"><i class="fas fa-tag"></i> ${escapeHtml(gestion.type)}</span>
+                        ${promise ? `<span class="badge" style="background:#f8fafc;color:#475569;">Orig: ${escapeHtml(gestion.result)}</span>` : ''}
+                        ${badgeHtml}
+                    </div>
+
+                    ${gestion.observations ? `<div class="gestion-card-body">"${escapeHtml(gestion.observations)}"</div>` : ''}
+
+                    ${gestion.nextAction ? `
+                        <div class="gestion-card-next">
+                            <i class="fas fa-arrow-right"></i>
+                            <span><strong>Próx. acción:</strong> ${escapeHtml(gestion.nextAction)}${gestion.nextFollowUpDate ? ` (${formatDate(gestion.nextFollowUpDate)})` : ''}</span>
+                        </div>
+                    ` : ''}
+
+                    <div class="gestion-card-actions">
+                        <button type="button" class="btn-card-action btn-sm" onclick="openClientHistoryModal('${client.id}')" title="Ver ficha e historial del cliente">
+                            <i class="fas fa-folder-open"></i> Ver Ficha
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="gestion-day-group">
+                <div class="gestion-day-header">
+                    <span><i class="fas fa-calendar-day"></i> ${escapeHtml(dateHeaderStr)}</span>
+                    <span class="gestion-day-count">${countText}</span>
+                </div>
+                ${cardsHtml}
+            </div>
+        `;
+    }).join('');
+}
+
 function openExportModal() {
     const expPeriodMonth = document.getElementById('expPeriodMonth');
     if (expPeriodMonth) {
@@ -3632,6 +3825,24 @@ function setupEventListeners() {
         if (el) {
             el.addEventListener('input', renderHistoryTable);
             el.addEventListener('change', renderHistoryTable);
+        }
+    });
+
+    // Gestions History Modal Event Listeners
+    const gestionsNavBtn = document.getElementById('gestionsNavBtn');
+    if (gestionsNavBtn) gestionsNavBtn.addEventListener('click', openGestionsHistoryModal);
+
+    const closeGestionsHistoryModal = document.getElementById('closeGestionsHistoryModal');
+    if (closeGestionsHistoryModal) closeGestionsHistoryModal.addEventListener('click', () => closeModalFn(document.getElementById('gestionsHistoryModal')));
+
+    const closeGestionsHistoryBtn = document.getElementById('closeGestionsHistoryBtn');
+    if (closeGestionsHistoryBtn) closeGestionsHistoryBtn.addEventListener('click', () => closeModalFn(document.getElementById('gestionsHistoryModal')));
+
+    ['gestFilterClient', 'gestFilterType', 'gestFilterResult', 'gestFilterFrom', 'gestFilterTo', 'gestFilterPendingFollowUp'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', renderGestionsHistoryTable);
+            el.addEventListener('change', renderGestionsHistoryTable);
         }
     });
 
