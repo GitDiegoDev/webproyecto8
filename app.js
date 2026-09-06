@@ -8,6 +8,7 @@
 // ========================================
 
 const STORAGE_KEY = 'palmares_clientes';
+const DISMISSED_NOTIFS_KEY = 'palmares_dismissed_notifications';
 const DB_NAME = 'PalmaresDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'clients';
@@ -559,11 +560,6 @@ function updateOverdueStatuses() {
     const currentMonthStr = getToday().substring(0, 7);
 
     clients.forEach(client => {
-        if (client.paymentStatus === 'partial') return; // no tocar pagos parciales
-
-        const clientPeriod = client.periodMonth || currentMonthStr;
-
-        // Préstamo saldado por completo (última cuota ya pagada): nunca vuelve a vencer
         const isLoanCompleted = client.paymentStatus === 'paid'
             && client.totalInstallments
             && client.installmentNumber >= client.totalInstallments;
@@ -573,32 +569,30 @@ function updateOverdueStatuses() {
             return;
         }
 
+        const isPartial = client.paymentStatus === 'partial';
+        const clientPeriod = client.periodMonth || currentMonthStr;
+
+        let overdueNow = false;
+        let daysOverdueNow = 0;
+
         if (clientPeriod > currentMonthStr) {
-            // Ya pagó y quedó con el período adelantado: todavía no corresponde cobrarle
-            client.paymentStatus = 'pending';
-            client.isOverdue = false;
-            client.daysOverdue = 0;
-            return;
+            overdueNow = false;
+        } else if (clientPeriod < currentMonthStr) {
+            overdueNow = true;
+            daysOverdueNow = calcularDiasVencidoDesdePeriodo(clientPeriod, client.paymentDay, today);
+        } else if (currentDay > client.paymentDay) {
+            overdueNow = true;
+            daysOverdueNow = currentDay - client.paymentDay;
         }
 
-        if (clientPeriod < currentMonthStr) {
-            // Quedó atrás uno o más meses sin pagar
-            client.paymentStatus = 'overdue';
-            client.isOverdue = true;
-            client.daysOverdue = calcularDiasVencidoDesdePeriodo(clientPeriod, client.paymentDay, today);
-            return;
-        }
+        client.isOverdue = overdueNow;
+        client.daysOverdue = overdueNow ? daysOverdueNow : 0;
 
-        // Período actual: misma lógica de día que ya existía antes
-        if (currentDay > client.paymentDay) {
-            client.paymentStatus = 'overdue';
-            client.isOverdue = true;
-            client.daysOverdue = currentDay - client.paymentDay;
-        } else {
-            client.paymentStatus = 'pending';
-            client.isOverdue = false;
-            client.daysOverdue = 0;
+        if (!isPartial) {
+            client.paymentStatus = overdueNow ? 'overdue' : 'pending';
         }
+        // Si es 'partial', el paymentStatus NO se toca acá (sigue como
+        // "Pago Parcial"), pero isOverdue/daysOverdue ya quedan correctos.
     });
 
     updatePromisesStatuses();
@@ -614,6 +608,49 @@ function updatePromisesStatuses() {
             }
         });
     });
+}
+
+function getDismissedNotificationIds() {
+    try {
+        const raw = localStorage.getItem(DISMISSED_NOTIFS_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function dismissNotificationId(notifId) {
+    if (!notifId) return;
+    const dismissed = getDismissedNotificationIds();
+    if (!dismissed.includes(notifId)) {
+        dismissed.push(notifId);
+        try {
+            localStorage.setItem(DISMISSED_NOTIFS_KEY, JSON.stringify(dismissed));
+        } catch (e) {
+            console.warn('Failed to save dismissed notification:', e);
+        }
+    }
+    updateDailyDashboard();
+}
+
+function dismissAllVisibleNotifications(notifIds) {
+    if (!Array.isArray(notifIds) || notifIds.length === 0) return;
+    const dismissed = getDismissedNotificationIds();
+    let updated = false;
+    notifIds.forEach(id => {
+        if (id && !dismissed.includes(id)) {
+            dismissed.push(id);
+            updated = true;
+        }
+    });
+    if (updated) {
+        try {
+            localStorage.setItem(DISMISSED_NOTIFS_KEY, JSON.stringify(dismissed));
+        } catch (e) {
+            console.warn('Failed to save dismissed notifications:', e);
+        }
+    }
+    updateDailyDashboard();
 }
 
 function updateDailyDashboard() {
@@ -695,6 +732,8 @@ function updateDailyDashboard() {
             unmanagedCount++;
         }
 
+        const dismissedIds = getDismissedNotificationIds();
+
         // Follow up check
         if (Array.isArray(client.gestiones)) {
             const hasTodayFollowUp = client.gestiones.some(g => g.nextFollowUpDate === todayStr);
@@ -702,12 +741,18 @@ function updateDailyDashboard() {
 
             const dueGestiones = client.gestiones.filter(g => g.nextFollowUpDate && g.nextFollowUpDate <= todayStr);
             if (dueGestiones.length > 0) {
-                followUpDueCount++;
                 dueGestiones.sort((a, b) => a.nextFollowUpDate.localeCompare(b.nextFollowUpDate));
-                followUpDueList.push({
-                    client: client,
-                    nextFollowUpDate: dueGestiones[0].nextFollowUpDate,
-                    gestion: dueGestiones[0]
+                dueGestiones.forEach(g => {
+                    const gNotifId = `gestion:${g.id}`;
+                    if (!dismissedIds.includes(gNotifId)) {
+                        followUpDueCount++;
+                        followUpDueList.push({
+                            client: client,
+                            nextFollowUpDate: g.nextFollowUpDate,
+                            gestion: g,
+                            notifId: gNotifId
+                        });
+                    }
                 });
             }
         }
@@ -727,11 +772,15 @@ function updateDailyDashboard() {
                 }
                 if (pr.status === 'vencida' || pr.status === 'incumplida' || (pr.promisedDate < todayStr && pr.status === 'pendiente')) {
                     promisesOverdueCount++;
-                    promisesBrokenCount++;
-                    brokenPromisesList.push({
-                        client: client,
-                        promise: pr
-                    });
+                    const prNotifId = `promise:${pr.id}`;
+                    if (!dismissedIds.includes(prNotifId)) {
+                        promisesBrokenCount++;
+                        brokenPromisesList.push({
+                            client: client,
+                            promise: pr,
+                            notifId: prNotifId
+                        });
+                    }
                 } else if (pr.status === 'pendiente' && pr.promisedDate > todayStr) {
                     promisesPendingCount++;
                 } else if (pr.status === 'cumplida') {
@@ -860,6 +909,12 @@ function renderNotificationsPanelData(brokenPromisesList, followUpDueList, promi
 
     if (emptyStateEl) emptyStateEl.style.display = 'none';
 
+    // Track visible IDs for "Marcar todas como leídas"
+    window._currentVisibleNotifIds = [
+        ...brokenPromisesList.map(i => i.notifId),
+        ...followUpDueList.map(i => i.notifId)
+    ];
+
     // Render Broken Promises
     if (brokenListEl && brokenSectionEl) {
         if (brokenPromisesList.length === 0) {
@@ -876,7 +931,10 @@ function renderNotificationsPanelData(brokenPromisesList, followUpDueList, promi
                     <div class="notification-item item-broken" onclick="handleNotificationItemClick('${c.id}')">
                         <div class="notif-item-header">
                             <span class="notif-client-name">${escapeHtml(c.name)}</span>
-                            <span class="notif-date">${dateStr}</span>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span class="notif-date">${dateStr}</span>
+                                <button type="button" class="btn-close" style="width: 22px; height: 22px; font-size: 0.75rem;" onclick="event.stopPropagation(); dismissNotificationId('${item.notifId}');" title="Descartar aviso">✕</button>
+                            </div>
                         </div>
                         <div class="notif-detail">
                             <span>Promesa incumplida</span>
@@ -903,7 +961,10 @@ function renderNotificationsPanelData(brokenPromisesList, followUpDueList, promi
                     <div class="notification-item item-followup" onclick="handleNotificationItemClick('${c.id}')">
                         <div class="notif-item-header">
                             <span class="notif-client-name">${escapeHtml(c.name)}</span>
-                            <span class="notif-date">${dateStr}</span>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span class="notif-date">${dateStr}</span>
+                                <button type="button" class="btn-close" style="width: 22px; height: 22px; font-size: 0.75rem;" onclick="event.stopPropagation(); dismissNotificationId('${item.notifId}');" title="Descartar aviso">✕</button>
+                            </div>
                         </div>
                         <div class="notif-detail">
                             <span>${actionStr}</span>
@@ -1863,7 +1924,7 @@ function updateMonthFilterOptions() {
 function updateStats() {
     els.totalClients.textContent = clients.length;
     els.pendingPayments.textContent = clients.filter(c => c.paymentStatus === 'pending').length;
-    els.overdueClients.textContent = clients.filter(c => c.paymentStatus === 'overdue').length;
+    els.overdueClients.textContent = clients.filter(c => c.isOverdue).length;
 }
 
 function getFilteredClients() {
@@ -1894,6 +1955,8 @@ function getFilteredClients() {
             filtered = filtered.filter(c => Array.isArray(c.gestiones) && c.gestiones.some(g => g.nextFollowUpDate === todayStr));
         } else if (currentStatusFilter === 'payments_today') {
             filtered = filtered.filter(c => Array.isArray(c.payments) && c.payments.some(p => p.date === todayStr));
+        } else if (currentStatusFilter === 'overdue') {
+            filtered = filtered.filter(c => c.isOverdue === true);
         } else {
             filtered = filtered.filter(c => c.paymentStatus === currentStatusFilter);
         }
@@ -2024,6 +2087,8 @@ function renderClientCard(client) {
     let combinedStatusLabel = statusConfig.label;
     if (client.paymentStatus === 'paid' && client.installmentNumber === client.totalInstallments) {
         combinedStatusLabel = `✅ Préstamo Completado`;
+    } else if (client.paymentStatus === 'partial' && client.isOverdue && client.daysOverdue > 0) {
+        combinedStatusLabel = `🟡 Pago Parcial - Atrasado ${client.daysOverdue} ${client.daysOverdue === 1 ? 'día' : 'días'}`;
     } else if (client.paymentStatus === 'overdue' && client.daysOverdue > 0) {
         combinedStatusLabel = `🔴 Atrasado - ${client.daysOverdue} ${client.daysOverdue === 1 ? 'día' : 'días'}`;
     } else if (client.paymentStatus === 'paid') {
@@ -2038,10 +2103,10 @@ function renderClientCard(client) {
         combinedStatusLabel = `⚪ Pendiente`;
     }
 
-    const punitorios = (client.paymentStatus === 'overdue' && client.daysOverdue > 0) ? calculatePunitorios(client.installmentAmount, client.daysOverdue, client.penaltyRate) : 0;
+    const punitorios = (client.isOverdue && client.daysOverdue > 0) ? calculatePunitorios(client.installmentAmount, client.daysOverdue, client.penaltyRate) : 0;
 
     let overduePenaltyHtml = '';
-    if (client.paymentStatus === 'overdue' && punitorios > 0) {
+    if (client.isOverdue && punitorios > 0) {
         overduePenaltyHtml = `<span class="penalty-badge" title="Interés punitorio por mora (${client.penaltyRate || 1.0}% diario)"><i class="fas fa-percent"></i> Punitorios: ${formatCurrency(punitorios)}</span>`;
     }
 
@@ -2070,7 +2135,7 @@ function renderClientCard(client) {
         instBadgeHtml += `<span class="badge" style="background:#d1e7dd;color:#0f5132;font-weight:700;" title="Préstamo Completado"><i class="fas fa-check-double"></i> Préstamo Completado</span>`;
     }
     let monthLabel = formatMonthYear(client.periodMonth);
-    let monthBadgeHtml = monthLabel ? `<span class="badge badge-period-month ${client.paymentStatus === 'overdue' ? 'overdue' : ''}" title="Mes del período"><i class="fas fa-calendar-alt"></i> Mes: ${escapeHtml(monthLabel)}</span>` : '';
+    let monthBadgeHtml = monthLabel ? `<span class="badge badge-period-month ${client.isOverdue ? 'overdue' : ''}" title="Mes del período"><i class="fas fa-calendar-alt"></i> Mes: ${escapeHtml(monthLabel)}</span>` : '';
 
     let contactHtml = '';
     if (client.email) {
@@ -2852,6 +2917,161 @@ function shareReceiptWhatsApp() {
     }
 }
 
+async function shareReceiptPDF() {
+    if (!currentReceiptData || !currentReceiptData.client || !currentReceiptData.payment) {
+        showToast('No hay información de comprobante para generar el PDF', 'error');
+        return;
+    }
+
+    const { client, payment, totalCobrado } = currentReceiptData;
+    const jsPDFLib = window.jspdf ? window.jspdf.jsPDF : window.jsPDF;
+
+    if (!jsPDFLib) {
+        showToast('Librería jsPDF no cargada', 'error');
+        return;
+    }
+
+    const doc = new jsPDFLib();
+
+    // Prominent Collector Notice Box
+    doc.setFillColor(254, 243, 199); // light yellow
+    doc.setDrawColor(217, 119, 6); // amber border
+    doc.rect(14, 12, 182, 22, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(180, 83, 9); // dark amber
+    doc.text('COMPROBANTE DEL COBRADOR', 18, 18);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(60, 60, 60);
+    const disclaimerLines = [
+        'Este comprobante es emitido por el cobrador como respaldo del pago recibido.',
+        'No reemplaza ni sustituye al comprobante oficial del sistema.'
+    ];
+    doc.text(disclaimerLines, 18, 24);
+
+    // Header
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(2, 132, 199); // sky blue / primary
+    doc.text('PALMARES', 105, 43, { align: 'center' });
+
+    doc.setFontSize(9);
+    doc.setTextColor(3, 105, 161);
+    doc.text('EFECTIVO EN EL ACTO', 105, 48, { align: 'center' });
+
+    const isPartial = payment.paymentType === 'partial';
+    const titleText = isPartial ? 'COMPROBANTE DE PAGO A CUENTA' : 'COMPROBANTE DE PAGO';
+    doc.setFontSize(12);
+    doc.setTextColor(26, 26, 46);
+    doc.text(titleText, 105, 55, { align: 'center' });
+
+    doc.setFontSize(10);
+    doc.setTextColor(2, 132, 199);
+    doc.text(`N.º COMPROBANTE: ${payment.receiptNumber || '00000001'}`, 105, 61, { align: 'center' });
+
+    let y = 72;
+    const addSection = (title) => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(108, 117, 125);
+        doc.text(title.toUpperCase(), 14, y);
+        doc.setDrawColor(233, 236, 239);
+        doc.line(14, y + 2, 196, y + 2);
+        y += 8;
+    };
+
+    const addRow = (label, value, isBold = false) => {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(80, 80, 80);
+        doc.text(label, 14, y);
+
+        if (isBold) doc.setFont('helvetica', 'bold');
+        doc.setTextColor(26, 26, 46);
+        doc.text(String(value), 196, y, { align: 'right' });
+        y += 6;
+    };
+
+    // Client section
+    addSection('Datos del Cliente');
+    addRow('Nombre Completo:', client.name, true);
+    if (client.dni) addRow('DNI / Documento:', client.dni);
+    if (client.branchNumber) addRow('Sucursal N°:', client.branchNumber);
+    if (client.requestNumber) addRow('Solicitud N°:', client.requestNumber);
+
+    y += 4;
+    // Payment section
+    addSection('Detalle del Pago');
+    addRow('Fecha y Hora:', `${formatDate(payment.date)} — ${payment.time || '12:00'} hs`);
+    addRow('Período / Mes:', formatMonthYear(payment.periodMonth));
+    addRow('Número de Cuota:', `Cuota ${payment.installmentNumber}`);
+    addRow('Medio de Pago:', payment.paymentMethod || 'Efectivo');
+
+    const baseCuota = payment.installmentAmount || client.installmentAmount || payment.amount;
+    addRow('Monto Total de Cuota:', formatCurrency(baseCuota));
+
+    if (payment.punitorios > 0) addRow('Punitorios por Mora:', `+ ${formatCurrency(payment.punitorios)}`);
+    if (payment.punitoriosWaived > 0) addRow('Punitorios Condonados:', `- ${formatCurrency(payment.punitoriosWaived)}`);
+
+    y += 2;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(2, 132, 199);
+    doc.text('MONTO ENTREGADO / COBRADO:', 14, y);
+    doc.text(formatCurrency(totalCobrado), 196, y, { align: 'right' });
+    y += 8;
+
+    if (payment.notes) {
+        y += 2;
+        addSection('Observaciones');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(60, 60, 60);
+        doc.text(payment.notes, 14, y);
+        y += 8;
+    }
+
+    // Footer
+    y = 135;
+    doc.setDrawColor(203, 213, 225);
+    doc.line(14, y, 196, y);
+    y += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Gracias por su pago — Palmares Efectivo en el Acto', 105, y, { align: 'center' });
+    y += 4;
+    doc.text(`Atendido por: ${payment.user || 'Cobrador'} | Registrado el ${formatDate(payment.date)}`, 105, y, { align: 'center' });
+
+    const pdfBlob = doc.output('blob');
+    const fileName = `Comprobante_Palmares_${payment.receiptNumber || '00000001'}.pdf`;
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    const shareText = `Comprobante de pago N° ${payment.receiptNumber || ''} - ${client.name}`;
+
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+            await navigator.share({
+                files: [pdfFile],
+                title: `Comprobante N° ${payment.receiptNumber}`,
+                text: shareText
+            });
+            showToast('PDF compartido correctamente', 'success');
+        } catch (err) {
+            if (err.name !== 'AbortError') {
+                doc.save(fileName);
+                showToast(`PDF descargado: ${fileName}. Adjúntalo en WhatsApp.`, 'info');
+            }
+        }
+    } else {
+        doc.save(fileName);
+        showToast(`PDF descargado (${fileName}). Adjúntalo a mano en WhatsApp.`, 'info');
+    }
+}
+
 function openWhatsAppDirect(client, msg) {
     const rawPhone = client.phone || client.celular || '';
     const cleanPhone = rawPhone.replace(/\D/g, '');
@@ -2897,6 +3117,32 @@ function renderHistoryTable() {
     const toDate = document.getElementById('histFilterTo')?.value || '';
     const method = document.getElementById('histFilterMethod')?.value || 'all';
     const exportStatus = document.getElementById('histFilterExportStatus')?.value || 'all';
+
+    let activeFiltersCount = 0;
+    if (qClient) activeFiltersCount++;
+    if (period !== 'all') activeFiltersCount++;
+    if (fromDate) activeFiltersCount++;
+    if (toDate) activeFiltersCount++;
+    if (method !== 'all') activeFiltersCount++;
+    if (exportStatus !== 'all') activeFiltersCount++;
+
+    const badgeEl = document.getElementById('historyFilterBadge');
+    const toggleBtnEl = document.getElementById('historyFilterToggleBtn');
+    if (badgeEl) {
+        if (activeFiltersCount > 0) {
+            badgeEl.textContent = activeFiltersCount;
+            badgeEl.style.display = 'inline-flex';
+        } else {
+            badgeEl.style.display = 'none';
+        }
+    }
+    if (toggleBtnEl) {
+        if (activeFiltersCount > 0) {
+            toggleBtnEl.classList.add('has-filters');
+        } else {
+            toggleBtnEl.classList.remove('has-filters');
+        }
+    }
 
     let allPayments = [];
     clients.forEach(c => {
@@ -3552,7 +3798,7 @@ function openPaymentModal(id) {
     const paymentTimeEl = document.getElementById('paymentTime');
     const paymentUserEl = document.getElementById('paymentUser');
 
-    const calculatedPenalty = (client.paymentStatus === 'overdue' && client.daysOverdue > 0) ? calculatePunitorios(client.installmentAmount, client.daysOverdue, client.penaltyRate) : 0;
+    const calculatedPenalty = (client.isOverdue && client.daysOverdue > 0) ? calculatePunitorios(client.installmentAmount, client.daysOverdue, client.penaltyRate) : 0;
     if (punitoriosGeneratedEl) punitoriosGeneratedEl.value = calculatedPenalty.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (punitoriosWaivedEl) punitoriosWaivedEl.value = '0,00';
     if (paymentTimeEl) paymentTimeEl.value = getCurrentTime();
@@ -3918,10 +4164,19 @@ function setupEventListeners() {
     const notificationsBtn = document.getElementById('notificationsBtn');
     const notificationsPanel = document.getElementById('notificationsPanel');
     const closeNotificationsPanelBtn = document.getElementById('closeNotificationsPanelBtn');
+    const markAllNotificationsReadBtn = document.getElementById('markAllNotificationsReadBtn');
 
     setupNativeNotificationPermission();
 
     if (notificationsBtn && notificationsPanel) {
+        if (markAllNotificationsReadBtn) {
+            markAllNotificationsReadBtn.addEventListener('click', () => {
+                if (window._currentVisibleNotifIds && window._currentVisibleNotifIds.length > 0) {
+                    dismissAllVisibleNotifications(window._currentVisibleNotifIds);
+                }
+            });
+        }
+
         notificationsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             notificationsPanel.classList.toggle('open');
@@ -4025,6 +4280,9 @@ function setupEventListeners() {
     const shareReceiptWaBtn = document.getElementById('shareReceiptWaBtn');
     if (shareReceiptWaBtn) shareReceiptWaBtn.addEventListener('click', shareReceiptWhatsApp);
 
+    const shareReceiptPdfBtn = document.getElementById('shareReceiptPdfBtn');
+    if (shareReceiptPdfBtn) shareReceiptPdfBtn.addEventListener('click', shareReceiptPDF);
+
     const closeReceiptModal = document.getElementById('closeReceiptModal');
     if (closeReceiptModal) closeReceiptModal.addEventListener('click', () => closeModalFn(document.getElementById('receiptModal')));
 
@@ -4040,6 +4298,15 @@ function setupEventListeners() {
 
     const closeHistoryBtn = document.getElementById('closeHistoryBtn');
     if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', () => closeModalFn(document.getElementById('historyModal')));
+
+    const historyFilterToggleBtn = document.getElementById('historyFilterToggleBtn');
+    const historyFilterPanel = document.getElementById('historyFilterPanel');
+    if (historyFilterToggleBtn && historyFilterPanel) {
+        historyFilterToggleBtn.addEventListener('click', () => {
+            historyFilterPanel.classList.toggle('open');
+            historyFilterToggleBtn.classList.toggle('active');
+        });
+    }
 
     ['histFilterClient', 'histFilterPeriod', 'histFilterFrom', 'histFilterTo', 'histFilterMethod', 'histFilterExportStatus'].forEach(id => {
         const el = document.getElementById(id);
