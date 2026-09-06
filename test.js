@@ -879,6 +879,60 @@ runTest('21. Gestiones History Panel Rendering, Grouping & Filtering', () => {
     }
 });
 
+runTest('23. Task 1 - Partial Payment Overdue Status & Calculation', () => {
+    const today = new Date();
+    const currentMonthStr = getToday().substring(0, 7);
+
+    const partialClient = {
+        id: 'c_partial_overdue',
+        name: 'Cliente Pago Parcial Atrasado',
+        paymentStatus: 'partial',
+        paymentDay: 5,
+        periodMonth: currentMonthStr,
+        installmentAmount: 50000,
+        isOverdue: false,
+        daysOverdue: 0
+    };
+
+    clients = [partialClient];
+
+    // Mock Date so current day is 15 (> paymentDay 5)
+    const RealDate = Date;
+    const origGetToday = getToday;
+    getToday = () => `${currentMonthStr}-15`;
+
+    global.Date = class extends RealDate {
+        constructor(...args) {
+            if (args.length === 0) {
+                return new RealDate(`${currentMonthStr}-15T12:00:00`);
+            }
+            return new RealDate(...args);
+        }
+        static now() {
+            return new RealDate(`${currentMonthStr}-15T12:00:00`).getTime();
+        }
+    };
+
+    try {
+        updateOverdueStatuses();
+        assert.strictEqual(partialClient.paymentStatus, 'partial', 'paymentStatus remains partial');
+        assert.strictEqual(partialClient.isOverdue, true, 'isOverdue is true');
+        assert.strictEqual(partialClient.daysOverdue, 10, 'daysOverdue is 10 days (15 - 5)');
+    } finally {
+        getToday = origGetToday;
+        global.Date = RealDate;
+    }
+});
+
+runTest('24. Task 3 - Notification Dismissal via LocalStorage', () => {
+    localStorage._data = {};
+    const notifId = 'promise:pr_test_dismiss';
+    dismissNotificationId(notifId);
+
+    const dismissed = getDismissedNotificationIds();
+    assert(dismissed.includes(notifId), 'notifId added to dismissed list');
+});
+
 console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);
 
 // [TEST 22] Notifications Badge & FollowUpDueCount Test
