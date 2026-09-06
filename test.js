@@ -880,3 +880,95 @@ runTest('21. Gestiones History Panel Rendering, Grouping & Filtering', () => {
 });
 
 console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);
+
+// [TEST 22] Notifications Badge & FollowUpDueCount Test
+runTest('22. Notifications Badge & FollowUpDueCount Test', () => {
+    const today = getToday();
+    const pastDate = '2020-01-01';
+
+    currentMonthFilter = 'all';
+
+    const elements = {};
+    const getEl = (id) => {
+        if (!elements[id]) {
+            elements[id] = {
+                id,
+                value: '',
+                textContent: '',
+                style: {},
+                classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+                addEventListener: () => {},
+                appendChild: () => {},
+                innerHTML: ''
+            };
+        }
+        return elements[id];
+    };
+
+    const originalGetElementById = document.getElementById;
+    document.getElementById = (id) => getEl(id);
+
+    clients = [
+        {
+            id: 'client_notif_1',
+            name: 'Cliente Promesa Incumplida',
+            paymentStatus: 'pending',
+            periodMonth: '2025-05',
+            promises: [{
+                id: 'pr_1',
+                promisedDate: pastDate,
+                promisedAmount: 10000,
+                status: 'vencida'
+            }],
+            gestiones: []
+        },
+        {
+            id: 'client_notif_2',
+            name: 'Cliente Seguimiento Atrasado',
+            paymentStatus: 'pending',
+            periodMonth: '2025-05',
+            promises: [],
+            gestiones: [{
+                id: 'gest_1',
+                date: pastDate,
+                nextFollowUpDate: pastDate,
+                nextAction: 'Llamar urgente'
+            }]
+        },
+        {
+            id: 'client_notif_3',
+            name: 'Cliente Al Día',
+            paymentStatus: 'paid',
+            periodMonth: '2025-05',
+            promises: [],
+            gestiones: [{
+                id: 'gest_2',
+                date: today,
+                nextFollowUpDate: '2099-12-31',
+                nextAction: 'Llamar en el futuro'
+            }]
+        }
+    ];
+
+    updateDailyDashboard();
+
+    const badge = document.getElementById('notificationsBadge');
+    const badgeCount = parseInt(badge.textContent || '0', 10);
+
+    if (badgeCount !== 2) {
+        throw new Error(`Expected badge count 2, got ${badgeCount}`);
+    }
+
+    const brokenList = document.getElementById('notificationsBrokenList');
+    const followUpList = document.getElementById('notificationsFollowUpList');
+
+    if (!brokenList || !brokenList.innerHTML.includes('Cliente Promesa Incumplida')) {
+        throw new Error('Broken promises list did not render expected client');
+    }
+
+    if (!followUpList || !followUpList.innerHTML.includes('Cliente Seguimiento Atrasado')) {
+        throw new Error('Follow-ups due list did not render expected client');
+    }
+
+    document.getElementById = originalGetElementById;
+});

@@ -645,6 +645,7 @@ function updateDailyDashboard() {
     let monthPartialCount = 0;
     let unmanagedCount = 0;
     let followUpTodayCount = 0;
+    let followUpDueCount = 0;
 
     let todayDueCount = 0;
     let todayDueAmount = 0;
@@ -657,6 +658,9 @@ function updateDailyDashboard() {
     let promisesBrokenCount = 0;
     let paymentsTodayCount = 0;
     let paymentsTodayAmount = 0;
+
+    const brokenPromisesList = [];
+    const followUpDueList = [];
 
     targetClients.forEach(client => {
         const instVal = client.installmentAmount || 0;
@@ -691,10 +695,21 @@ function updateDailyDashboard() {
             unmanagedCount++;
         }
 
-        // Follow up today check
+        // Follow up check
         if (Array.isArray(client.gestiones)) {
             const hasTodayFollowUp = client.gestiones.some(g => g.nextFollowUpDate === todayStr);
             if (hasTodayFollowUp) followUpTodayCount++;
+
+            const dueGestiones = client.gestiones.filter(g => g.nextFollowUpDate && g.nextFollowUpDate <= todayStr);
+            if (dueGestiones.length > 0) {
+                followUpDueCount++;
+                dueGestiones.sort((a, b) => a.nextFollowUpDate.localeCompare(b.nextFollowUpDate));
+                followUpDueList.push({
+                    client: client,
+                    nextFollowUpDate: dueGestiones[0].nextFollowUpDate,
+                    gestion: dueGestiones[0]
+                });
+            }
         }
 
         // Due today
@@ -713,6 +728,10 @@ function updateDailyDashboard() {
                 if (pr.status === 'vencida' || pr.status === 'incumplida' || (pr.promisedDate < todayStr && pr.status === 'pendiente')) {
                     promisesOverdueCount++;
                     promisesBrokenCount++;
+                    brokenPromisesList.push({
+                        client: client,
+                        promise: pr
+                    });
                 } else if (pr.status === 'pendiente' && pr.promisedDate > todayStr) {
                     promisesPendingCount++;
                 } else if (pr.status === 'cumplida') {
@@ -757,6 +776,151 @@ function updateDailyDashboard() {
     setTxt('dashPaymentsTodayAmount', formatCurrency(paymentsTodayAmount));
     setTxt('dashPromiseEffectiveness', `${promiseEffectiveness.replace('.', ',')}%`);
     setTxt('dashPromiseEffectivenessSub', `${promisesFulfilledCount} de ${totalPromisesEvaluated} cumplidas`);
+
+    // Update Notification Bell Badge & Data
+    const totalNotifications = promisesBrokenCount + followUpDueCount;
+    const notificationsBadgeEl = document.getElementById('notificationsBadge');
+    if (notificationsBadgeEl) {
+        notificationsBadgeEl.textContent = totalNotifications;
+        notificationsBadgeEl.style.display = totalNotifications > 0 ? 'flex' : 'none';
+    }
+
+    renderNotificationsPanelData(brokenPromisesList, followUpDueList, promisesBrokenCount, followUpDueCount);
+    checkAndTriggerNativeNotification(promisesBrokenCount, followUpDueCount);
+}
+
+function checkAndTriggerNativeNotification(brokenCount, followUpCount) {
+    const total = brokenCount + followUpCount;
+    const permContainer = document.getElementById('notificationsPermContainer');
+
+    if (!('Notification' in window)) {
+        if (permContainer) permContainer.style.display = 'none';
+        return;
+    }
+
+    if (Notification.permission === 'default') {
+        if (permContainer) permContainer.style.display = 'flex';
+    } else {
+        if (permContainer) permContainer.style.display = 'none';
+    }
+
+    if (Notification.permission === 'granted' && total > 0 && !window._nativeNotificationTriggered) {
+        window._nativeNotificationTriggered = true;
+        try {
+            const parts = [];
+            if (brokenCount > 0) parts.push(`${brokenCount} promesa${brokenCount > 1 ? 's' : ''} incumplida${brokenCount > 1 ? 's' : ''}`);
+            if (followUpCount > 0) parts.push(`${followUpCount} seguimiento${followUpCount > 1 ? 's' : ''} pendiente${followUpCount > 1 ? 's' : ''}`);
+
+            const msg = parts.join(' y ');
+            new Notification('Palmares - Avisos de Cobranza', {
+                body: `Tenés ${msg}.`,
+                icon: 'manifest.json'
+            });
+        } catch (e) {
+            console.warn('Native notification failed:', e);
+        }
+    }
+}
+
+function setupNativeNotificationPermission() {
+    const enableBtn = document.getElementById('enableNotificationsBtn');
+    if (enableBtn) {
+        enableBtn.addEventListener('click', async () => {
+            if (!('Notification' in window)) return;
+            try {
+                const result = await Notification.requestPermission();
+                const permContainer = document.getElementById('notificationsPermContainer');
+                if (permContainer) permContainer.style.display = result === 'default' ? 'flex' : 'none';
+                if (result === 'granted') {
+                    showToast('Avisos activados correctamente', 'success');
+                    updateDailyDashboard();
+                }
+            } catch (e) {
+                console.warn('Error requesting notification permission:', e);
+            }
+        });
+    }
+}
+
+function renderNotificationsPanelData(brokenPromisesList, followUpDueList, promisesBrokenCount, followUpDueCount) {
+    const brokenListEl = document.getElementById('notificationsBrokenList');
+    const brokenSectionEl = document.getElementById('notificationsBrokenSection');
+    const followUpListEl = document.getElementById('notificationsFollowUpList');
+    const followUpSectionEl = document.getElementById('notificationsFollowUpSection');
+    const emptyStateEl = document.getElementById('notificationsEmptyState');
+
+    const totalNotifications = promisesBrokenCount + followUpDueCount;
+
+    if (totalNotifications === 0) {
+        if (brokenSectionEl) brokenSectionEl.style.display = 'none';
+        if (followUpSectionEl) followUpSectionEl.style.display = 'none';
+        if (emptyStateEl) emptyStateEl.style.display = 'block';
+        return;
+    }
+
+    if (emptyStateEl) emptyStateEl.style.display = 'none';
+
+    // Render Broken Promises
+    if (brokenListEl && brokenSectionEl) {
+        if (brokenPromisesList.length === 0) {
+            brokenSectionEl.style.display = 'none';
+            brokenListEl.innerHTML = '';
+        } else {
+            brokenSectionEl.style.display = 'block';
+            brokenListEl.innerHTML = brokenPromisesList.map(item => {
+                const c = item.client;
+                const pr = item.promise;
+                const dateStr = pr.promisedDate ? formatDate(pr.promisedDate) : 'Sin fecha';
+                const amountStr = pr.promisedAmount ? formatCurrency(pr.promisedAmount) : '$ 0,00';
+                return `
+                    <div class="notification-item item-broken" onclick="handleNotificationItemClick('${c.id}')">
+                        <div class="notif-item-header">
+                            <span class="notif-client-name">${escapeHtml(c.name)}</span>
+                            <span class="notif-date">${dateStr}</span>
+                        </div>
+                        <div class="notif-detail">
+                            <span>Promesa incumplida</span>
+                            <span class="notif-amount">${amountStr}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    // Render Due Follow-ups
+    if (followUpListEl && followUpSectionEl) {
+        if (followUpDueList.length === 0) {
+            followUpSectionEl.style.display = 'none';
+            followUpListEl.innerHTML = '';
+        } else {
+            followUpSectionEl.style.display = 'block';
+            followUpListEl.innerHTML = followUpDueList.map(item => {
+                const c = item.client;
+                const dateStr = item.nextFollowUpDate ? formatDate(item.nextFollowUpDate) : 'Sin fecha';
+                const actionStr = item.gestion && item.gestion.nextAction ? escapeHtml(item.gestion.nextAction) : 'Seguimiento programado';
+                return `
+                    <div class="notification-item item-followup" onclick="handleNotificationItemClick('${c.id}')">
+                        <div class="notif-item-header">
+                            <span class="notif-client-name">${escapeHtml(c.name)}</span>
+                            <span class="notif-date">${dateStr}</span>
+                        </div>
+                        <div class="notif-detail">
+                            <span>${actionStr}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+}
+
+function handleNotificationItemClick(clientId) {
+    const panel = document.getElementById('notificationsPanel');
+    if (panel) panel.classList.remove('open');
+    const btn = document.getElementById('notificationsBtn');
+    if (btn) btn.classList.remove('active');
+    openClientHistoryModal(clientId);
 }
 
 // ========================================
@@ -3750,6 +3914,34 @@ function setupEventListeners() {
         els.filterPanel.classList.toggle('open');
         els.filterBtn.classList.toggle('active');
     });
+
+    const notificationsBtn = document.getElementById('notificationsBtn');
+    const notificationsPanel = document.getElementById('notificationsPanel');
+    const closeNotificationsPanelBtn = document.getElementById('closeNotificationsPanelBtn');
+
+    setupNativeNotificationPermission();
+
+    if (notificationsBtn && notificationsPanel) {
+        notificationsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            notificationsPanel.classList.toggle('open');
+            notificationsBtn.classList.toggle('active');
+        });
+
+        if (closeNotificationsPanelBtn) {
+            closeNotificationsPanelBtn.addEventListener('click', () => {
+                notificationsPanel.classList.remove('open');
+                notificationsBtn.classList.remove('active');
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!notificationsPanel.contains(e.target) && !notificationsBtn.contains(e.target)) {
+                notificationsPanel.classList.remove('open');
+                notificationsBtn.classList.remove('active');
+            }
+        });
+    }
 
     els.addClientBtn.addEventListener('click', openAddModal);
 

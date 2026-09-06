@@ -23,6 +23,47 @@
                     <h1>Palmares</h1>
                     <span class="tagline">Efectivo en el Acto</span>
                 </div>
+                <button type="button" id="notificationsBtn" class="notifications-btn" aria-label="Notificaciones" title="Notificaciones">
+                    <i class="fas fa-bell"></i>
+                    <span id="notificationsBadge" class="notifications-badge" style="display: none;">0</span>
+                </button>
+            </div>
+
+            <!-- Panel Desplegable de Notificaciones -->
+            <div class="notifications-panel" id="notificationsPanel">
+                <div class="notifications-header">
+                    <h3><i class="fas fa-bell"></i> Avisos y Notificaciones</h3>
+                    <button type="button" class="btn-close" id="closeNotificationsPanelBtn" aria-label="Cerrar notificaciones">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="notifications-body" id="notificationsBody">
+                    <!-- Permiso de Notificación Nativa -->
+                    <div id="notificationsPermContainer" class="notifications-perm-box" style="display: none;">
+                        <span><i class="fas fa-bell"></i> ¿Recibir avisos del sistema?</span>
+                        <button type="button" id="enableNotificationsBtn" class="btn-secondary btn-sm">
+                            Activar avisos
+                        </button>
+                    </div>
+
+                    <!-- Sección 1: Promesas Incumplidas -->
+                    <div class="notifications-section" id="notificationsBrokenSection">
+                        <h4 class="notifications-section-title"><i class="fas fa-exclamation-triangle" style="color: #dc3545;"></i> ⚠️ Promesas Incumplidas</h4>
+                        <div id="notificationsBrokenList" class="notifications-list"></div>
+                    </div>
+
+                    <!-- Sección 2: Seguimientos Pendientes -->
+                    <div class="notifications-section" id="notificationsFollowUpSection">
+                        <h4 class="notifications-section-title"><i class="fas fa-calendar-alt" style="color: #d97706;"></i> 📅 Seguimientos Pendientes</h4>
+                        <div id="notificationsFollowUpList" class="notifications-list"></div>
+                    </div>
+
+                    <!-- Estado Vacío -->
+                    <div id="notificationsEmptyState" class="notifications-empty" style="display: none;">
+                        <i class="fas fa-check-circle"></i>
+                        <p>Sin avisos pendientes por ahora</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Selector de Cartera Mensual -->
