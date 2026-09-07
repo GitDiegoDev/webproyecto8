@@ -3035,7 +3035,7 @@ async function shareReceiptPDF() {
     }
 
     // Footer
-    y = 135;
+    y = Math.max(y + 10, 100);
     doc.setDrawColor(203, 213, 225);
     doc.line(14, y, 196, y);
     y += 6;
@@ -3212,9 +3212,288 @@ function renderHistoryTable() {
 // PANEL DE GESTIONES DEL COBRADOR
 // ========================================
 
+let currentGestionsView = 'list';
+let calendarYear = new Date().getFullYear();
+let calendarMonth = new Date().getMonth(); // 0-11
+let selectedCalendarDate = null;
+
 function openGestionsHistoryModal() {
-    renderGestionsHistoryTable();
+    const listBtn = document.getElementById('gestionsListViewBtn');
+    const calendarBtn = document.getElementById('gestionsCalendarViewBtn');
+    const groupedContainer = document.getElementById('gestionsGroupedContainer');
+    const calendarContainer = document.getElementById('gestionsCalendarContainer');
+    const filterToggleRow = document.getElementById('gestionsFilterToggleRow');
+    const filterPanel = document.getElementById('gestionsFilterPanel');
+
+    if (currentGestionsView === 'calendar') {
+        if (listBtn) listBtn.classList.remove('active');
+        if (calendarBtn) calendarBtn.classList.add('active');
+        if (groupedContainer) groupedContainer.style.display = 'none';
+        if (filterToggleRow) filterToggleRow.style.display = 'none';
+        if (filterPanel) filterPanel.classList.remove('open');
+        if (calendarContainer) calendarContainer.style.display = 'flex';
+        renderGestionsCalendar();
+    } else {
+        if (listBtn) listBtn.classList.add('active');
+        if (calendarBtn) calendarBtn.classList.remove('active');
+        if (groupedContainer) groupedContainer.style.display = 'flex';
+        if (filterToggleRow) filterToggleRow.style.display = 'flex';
+        if (calendarContainer) calendarContainer.style.display = 'none';
+        renderGestionsHistoryTable();
+    }
+
     openModal(document.getElementById('gestionsHistoryModal'));
+}
+
+function setupGestionsViewTabs() {
+    const listBtn = document.getElementById('gestionsListViewBtn');
+    const calendarBtn = document.getElementById('gestionsCalendarViewBtn');
+    const groupedContainer = document.getElementById('gestionsGroupedContainer');
+    const calendarContainer = document.getElementById('gestionsCalendarContainer');
+    const filterToggleRow = document.getElementById('gestionsFilterToggleRow');
+    const filterPanel = document.getElementById('gestionsFilterPanel');
+
+    if (listBtn && calendarBtn) {
+        listBtn.addEventListener('click', () => {
+            currentGestionsView = 'list';
+            listBtn.classList.add('active');
+            calendarBtn.classList.remove('active');
+            if (groupedContainer) groupedContainer.style.display = 'flex';
+            if (filterToggleRow) filterToggleRow.style.display = 'flex';
+            if (calendarContainer) calendarContainer.style.display = 'none';
+            renderGestionsHistoryTable();
+        });
+
+        calendarBtn.addEventListener('click', () => {
+            currentGestionsView = 'calendar';
+            calendarBtn.classList.add('active');
+            listBtn.classList.remove('active');
+            if (groupedContainer) groupedContainer.style.display = 'none';
+            if (filterToggleRow) filterToggleRow.style.display = 'none';
+            if (filterPanel) filterPanel.classList.remove('open');
+            if (calendarContainer) calendarContainer.style.display = 'flex';
+            renderGestionsCalendar();
+        });
+    }
+}
+
+function getAllCalendarActions() {
+    const actionsMap = {};
+
+    clients.forEach(client => {
+        if (Array.isArray(client.gestiones)) {
+            client.gestiones.forEach(g => {
+                if (g.nextFollowUpDate) {
+                    const dateKey = g.nextFollowUpDate;
+                    if (!actionsMap[dateKey]) actionsMap[dateKey] = [];
+                    const actionText = (g.nextAction && g.nextAction.trim()) ? g.nextAction.trim() : 'Seguimiento programado';
+                    actionsMap[dateKey].push({
+                        type: 'gestion',
+                        text: actionText,
+                        client: client,
+                        date: dateKey
+                    });
+                }
+            });
+        }
+
+        if (Array.isArray(client.promises)) {
+            client.promises.forEach(pr => {
+                if (pr.promisedDate && (pr.status === 'pendiente' || pr.status === 'vencida')) {
+                    const dateKey = pr.promisedDate;
+                    if (!actionsMap[dateKey]) actionsMap[dateKey] = [];
+                    const amountStr = formatCurrency(pr.promisedAmount || 0);
+                    actionsMap[dateKey].push({
+                        type: 'promise',
+                        text: `Verificar promesa de pago: ${amountStr}`,
+                        client: client,
+                        date: dateKey,
+                        status: pr.status
+                    });
+                }
+            });
+        }
+    });
+
+    return actionsMap;
+}
+
+function renderGestionsCalendar() {
+    const container = document.getElementById('gestionsCalendarContainer');
+    if (!container) return;
+
+    updatePromisesStatuses();
+    const actionsMap = getAllCalendarActions();
+    const todayStr = getToday();
+
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const currentMonthTitle = `${monthNames[calendarMonth]} ${calendarYear}`;
+
+    let html = `
+        <div class="calendar-wrapper">
+            <div class="calendar-header">
+                <div class="calendar-title-box">
+                    <span class="calendar-title">${escapeHtml(currentMonthTitle)}</span>
+                    <button type="button" class="calendar-today-btn" onclick="goToCalendarToday()">Hoy</button>
+                </div>
+                <div style="display: flex; gap: 0.35rem;">
+                    <button type="button" class="calendar-nav-btn" onclick="navigateCalendarMonth(-1)" aria-label="Mes anterior"><i class="fas fa-chevron-left"></i></button>
+                    <button type="button" class="calendar-nav-btn" onclick="navigateCalendarMonth(1)" aria-label="Mes siguiente"><i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+
+            <div class="calendar-grid">
+                <div class="calendar-day-header">Lun</div>
+                <div class="calendar-day-header">Mar</div>
+                <div class="calendar-day-header">Mié</div>
+                <div class="calendar-day-header">Jue</div>
+                <div class="calendar-day-header">Vie</div>
+                <div class="calendar-day-header">Sáb</div>
+                <div class="calendar-day-header">Dom</div>
+    `;
+
+    const firstDay = new Date(calendarYear, calendarMonth, 1);
+    const startDayIndex = (firstDay.getDay() + 6) % 7; // Monday = 0
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const daysInPrevMonth = new Date(calendarYear, calendarMonth, 0).getDate();
+
+    // Prev month padding
+    const prevMonthYear = calendarMonth === 0 ? calendarYear - 1 : calendarYear;
+    const prevMonth = calendarMonth === 0 ? 11 : calendarMonth - 1;
+
+    for (let i = startDayIndex - 1; i >= 0; i--) {
+        const dayNum = daysInPrevMonth - i;
+        const dateStr = `${prevMonthYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+        const actions = actionsMap[dateStr] || [];
+        const isToday = dateStr === todayStr;
+        const isSelected = dateStr === selectedCalendarDate;
+        const count = actions.length;
+
+        html += `
+            <div class="calendar-day-cell other-month ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
+                <span class="day-number">${dayNum}</span>
+                ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
+            </div>
+        `;
+    }
+
+    // Current month days
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const actions = actionsMap[dateStr] || [];
+        const isToday = dateStr === todayStr;
+        const isSelected = dateStr === selectedCalendarDate;
+        const count = actions.length;
+
+        html += `
+            <div class="calendar-day-cell ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
+                <span class="day-number">${d}</span>
+                ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
+            </div>
+        `;
+    }
+
+    // Next month padding
+    const totalCellsSoFar = startDayIndex + daysInMonth;
+    const nextPadding = (7 - (totalCellsSoFar % 7)) % 7;
+    const nextMonthYear = calendarMonth === 11 ? calendarYear + 1 : calendarYear;
+    const nextMonth = calendarMonth === 11 ? 0 : calendarMonth + 1;
+
+    for (let d = 1; d <= nextPadding; d++) {
+        const dateStr = `${nextMonthYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const actions = actionsMap[dateStr] || [];
+        const isToday = dateStr === todayStr;
+        const isSelected = dateStr === selectedCalendarDate;
+        const count = actions.length;
+
+        html += `
+            <div class="calendar-day-cell other-month ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
+                <span class="day-number">${d}</span>
+                ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
+            </div>
+        `;
+    }
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    // Render day actions list if selectedCalendarDate has actions
+    const selectedActions = selectedCalendarDate ? (actionsMap[selectedCalendarDate] || []) : [];
+    if (selectedCalendarDate && selectedActions.length > 0) {
+        html += renderDayActionsList(selectedCalendarDate, selectedActions);
+    }
+
+    container.innerHTML = html;
+}
+
+function renderDayActionsList(dateStr, actions) {
+    const formattedDate = formatDate(dateStr);
+    const cardsHtml = actions.map(act => {
+        const isGestion = act.type === 'gestion';
+        const iconClass = isGestion ? 'fa-headset' : 'fa-handshake';
+        const tagClass = isGestion ? 'gestion' : 'promise';
+        const tagLabel = isGestion ? 'Seguimiento' : 'Promesa';
+
+        return `
+            <div class="calendar-action-card ${tagClass}">
+                <div class="action-card-header">
+                    <span class="action-card-client">${escapeHtml(act.client.name)}</span>
+                    <span class="action-card-type-tag ${tagClass}">
+                        <i class="fas ${iconClass}"></i> ${tagLabel}
+                    </span>
+                </div>
+                <div class="action-card-text">${escapeHtml(act.text)}</div>
+                <div class="action-card-footer">
+                    <button type="button" class="btn-card-action btn-sm" onclick="openClientHistoryModal('${act.client.id}')">
+                        <i class="fas fa-folder-open"></i> Ver Cliente
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="calendar-day-actions-list">
+            <div class="actions-list-header">
+                <i class="fas fa-list-check"></i> Acciones para el ${escapeHtml(formattedDate)} (${actions.length})
+            </div>
+            ${cardsHtml}
+        </div>
+    `;
+}
+
+function selectCalendarDate(dateStr) {
+    const actionsMap = getAllCalendarActions();
+    const actions = actionsMap[dateStr] || [];
+    if (actions.length > 0) {
+        selectedCalendarDate = dateStr;
+    } else {
+        selectedCalendarDate = null;
+    }
+    renderGestionsCalendar();
+}
+
+function navigateCalendarMonth(direction) {
+    calendarMonth += direction;
+    if (calendarMonth < 0) {
+        calendarMonth = 11;
+        calendarYear -= 1;
+    } else if (calendarMonth > 11) {
+        calendarMonth = 0;
+        calendarYear += 1;
+    }
+    selectedCalendarDate = null;
+    renderGestionsCalendar();
+}
+
+function goToCalendarToday() {
+    const today = new Date();
+    calendarYear = today.getFullYear();
+    calendarMonth = today.getMonth();
+    selectedCalendarDate = getToday();
+    renderGestionsCalendar();
 }
 
 function formatGroupDateHeader(dateStr) {
@@ -4317,6 +4596,7 @@ function setupEventListeners() {
     });
 
     // Gestions History Modal Event Listeners
+    setupGestionsViewTabs();
     const gestionsNavBtn = document.getElementById('gestionsNavBtn');
     if (gestionsNavBtn) gestionsNavBtn.addEventListener('click', openGestionsHistoryModal);
 

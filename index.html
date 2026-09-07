@@ -937,7 +937,17 @@
                 <!-- Injected via JS -->
             </div>
 
-            <div class="gestions-filter-toggle-row">
+            <!-- View switch tabs: Lista vs Calendario -->
+            <div class="gestions-view-tabs" id="gestionsViewTabs">
+                <button type="button" class="gestions-view-tab active" id="gestionsListViewBtn" data-view="list">
+                    📋 Lista
+                </button>
+                <button type="button" class="gestions-view-tab" id="gestionsCalendarViewBtn" data-view="calendar">
+                    📅 Calendario
+                </button>
+            </div>
+
+            <div class="gestions-filter-toggle-row" id="gestionsFilterToggleRow">
                 <button type="button" class="btn-secondary btn-sm btn-filter-toggle" id="gestionsFilterToggleBtn">
                     <i class="fas fa-filter"></i>
                     <span>Filtrar</span>
@@ -998,6 +1008,10 @@
             </div>
 
             <div class="gestions-grouped-container" id="gestionsGroupedContainer">
+                <!-- Rendered via JS -->
+            </div>
+
+            <div class="gestions-calendar-container" id="gestionsCalendarContainer" style="display: none;">
                 <!-- Rendered via JS -->
             </div>
 
