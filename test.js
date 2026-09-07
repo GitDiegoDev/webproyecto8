@@ -807,8 +807,14 @@ runTest('20. Exact Regression Test - Paid Cuota Advances & Transitions to Overdu
 runTest('21. Gestiones History Panel Rendering, Grouping & Filtering', () => {
     const elements = {
         gestionsHistoryModal: { style: {}, classList: { _c: {}, add: function(c) { this._c[c] = true; }, remove: function(c) { delete this._c[c]; } } },
-        gestionsGroupedContainer: { innerHTML: '' },
-        gestionsTodaySummary: { innerHTML: '' },
+        gestionsGroupedContainer: { innerHTML: '', style: {} },
+        gestionsTodaySummary: { innerHTML: '', style: {} },
+        gestionsCalendarContainer: { innerHTML: '', style: {} },
+        gestionsViewTabs: { style: {} },
+        gestionsListViewBtn: { classList: { add: () => {}, remove: () => {} } },
+        gestionsCalendarViewBtn: { classList: { add: () => {}, remove: () => {} } },
+        gestionsFilterToggleRow: { style: {} },
+        gestionsFilterPanel: { classList: { add: () => {}, remove: () => {} } },
         gestionsFilterBadge: { textContent: '', style: {} },
         gestionsFilterToggleBtn: { classList: { _c: {}, add: function(c) { this._c[c] = true; }, remove: function(c) { delete this._c[c]; } } },
         gestFilterClient: { value: '' },
@@ -867,6 +873,22 @@ runTest('21. Gestiones History Panel Rendering, Grouping & Filtering', () => {
         renderGestionsHistoryTable();
         assert(elements.gestionsGroupedContainer.innerHTML.includes('Carlos Gomez'), 'Restores list on clearing filter');
         assert.strictEqual(elements.gestionsFilterBadge.style.display, 'none', 'Filter badge hidden when no filters active');
+
+        // Test Calendar View toggle & rendering
+        currentGestionsView = 'calendar';
+        const [tYear, tMonth] = todayStr.split('-').map(Number);
+        calendarYear = tYear;
+        calendarMonth = tMonth - 1;
+        renderGestionsCalendar();
+        assert(elements.gestionsCalendarContainer.innerHTML.includes('calendar-grid'), 'Calendar grid rendered');
+
+        // Select date with actions
+        selectCalendarDate(todayStr);
+        assert(elements.gestionsCalendarContainer.innerHTML.includes('Acciones para el'), 'Day actions section displayed when day selected');
+
+        // Restore list view for remaining checks
+        currentGestionsView = 'list';
+        openGestionsHistoryModal();
 
         // Test pending follow up filter
         elements.gestFilterPendingFollowUp.checked = true;
