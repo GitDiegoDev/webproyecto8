@@ -955,6 +955,141 @@ runTest('24. Task 3 - Notification Dismissal via LocalStorage', () => {
     assert(dismissed.includes(notifId), 'notifId added to dismissed list');
 });
 
+runTest('25. Task 1 Verification - Monthly Portfolio Amount Calculations & Payment Flow', () => {
+    const originalGetElementById = document.getElementById;
+    const elements = {};
+    document.getElementById = (id) => {
+        if (!elements[id]) {
+            elements[id] = {
+                id,
+                value: '',
+                textContent: '',
+                style: {},
+                classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+                addEventListener: () => {},
+                appendChild: () => {},
+                innerHTML: ''
+            };
+        }
+        return elements[id];
+    };
+
+    try {
+        currentMonthFilter = '2026-09';
+        clients = [
+            {
+                id: 'c_portfolio_1',
+                name: 'Cliente Cartera 1',
+                installmentAmount: 50000,
+                installmentNumber: 1,
+                totalInstallments: 12,
+                periodMonth: '2026-09',
+                paymentStatus: 'pending',
+                payments: []
+            },
+            {
+                id: 'c_portfolio_2',
+                name: 'Cliente Cartera 2',
+                installmentAmount: 30000,
+                installmentNumber: 1,
+                totalInstallments: 12,
+                periodMonth: '2026-09',
+                paymentStatus: 'pending',
+                payments: []
+            }
+        ];
+
+        // Initial check: Total = $80.000, Collected = $0, Pending = $80.000
+        updateDailyDashboard();
+        const totalEl1 = document.getElementById('dashMonthTotalAmount');
+        const collectedEl1 = document.getElementById('dashMonthCollectedAmount');
+        const pendingEl1 = document.getElementById('dashMonthPendingAmount');
+        const pendingRateEl1 = document.getElementById('dashMonthPendingRate');
+
+        assert.strictEqual(totalEl1.textContent, '$ 80.000,00', 'Initial total portfolio amount');
+        assert.strictEqual(collectedEl1.textContent, '$ 0,00', 'Initial collected amount is 0');
+        assert.strictEqual(pendingEl1.textContent, '$ 80.000,00', 'Initial pending amount is $80.000');
+        assert.strictEqual(pendingRateEl1.textContent, '100,0%', 'Initial pending rate is 100%');
+
+        // Simulate paying cuota for Cliente Cartera 1 for September 2026
+        const p1 = {
+            id: 'pay_p1',
+            amount: 50000,
+            installmentAmount: 50000,
+            date: getToday(),
+            periodMonth: '2026-09',
+            installmentNumber: '1'
+        };
+        clients[0].payments.push(p1);
+        clients[0].installmentNumber = 2;
+        clients[0].periodMonth = '2026-10'; // Period advances to October!
+        clients[0].paymentStatus = 'pending';
+
+        updateDailyDashboard();
+
+        const totalEl2 = document.getElementById('dashMonthTotalAmount');
+        const collectedEl2 = document.getElementById('dashMonthCollectedAmount');
+        const pendingEl2 = document.getElementById('dashMonthPendingAmount');
+        const recoveryRateEl2 = document.getElementById('dashMonthRecoveryRate');
+        const pendingRateEl2 = document.getElementById('dashMonthPendingRate');
+
+        assert.strictEqual(totalEl2.textContent, '$ 80.000,00', 'Total portfolio for Sept remains $80.000 after payment');
+        assert.strictEqual(collectedEl2.textContent, '$ 50.000,00', 'Collected amount reflects $50.000 paid');
+        assert.strictEqual(pendingEl2.textContent, '$ 30.000,00', 'Pending amount reduced to $30.000');
+        assert.strictEqual(recoveryRateEl2.textContent, '62,5%', 'Recovery rate is 62.5%');
+        assert.strictEqual(pendingRateEl2.textContent, '37,5%', 'Pending rate is 37.5%');
+    } finally {
+        document.getElementById = originalGetElementById;
+    }
+});
+
+runTest('26. Task 2 Verification - Gestiones Calendar Resiliency & Malformed Date Handling', () => {
+    const origConsoleWarn = console.warn;
+    const origConsoleError = console.error;
+    let warnCount = 0;
+    let errorCount = 0;
+
+    console.warn = () => { warnCount++; };
+    console.error = () => { errorCount++; };
+
+    try {
+        clients = [
+            {
+                id: 'c_malformed_1',
+                name: 'Cliente Fecha Invalida',
+                gestiones: [
+                    { id: 'g_bad', nextFollowUpDate: '2026-09-INVALID', nextAction: 'Prueba' },
+                    { id: 'g_good', nextFollowUpDate: '2026-09-25', nextAction: 'Seguimiento OK' }
+                ],
+                promises: [
+                    { id: 'pr_bad', promisedDate: 'NOT-A-DATE', promisedAmount: 10000, status: 'pendiente' },
+                    { id: 'pr_good', promisedDate: '2026-09-28', promisedAmount: 20000, status: 'pendiente' }
+                ]
+            }
+        ];
+
+        const actionsMap = getAllCalendarActions();
+
+        assert(warnCount >= 2, 'Warnings logged for invalid dates');
+        assert(!actionsMap['2026-09-INVALID'], 'Invalid gestion date key not added');
+        assert(!actionsMap['NOT-A-DATE'], 'Invalid promise date key not added');
+        assert(actionsMap['2026-09-25'], 'Valid gestion date processed correctly');
+        assert(actionsMap['2026-09-28'], 'Valid promise date processed correctly');
+
+        // Test try/catch fallback in renderGestionsCalendar
+        const origGetElementById = document.getElementById;
+        const dummyContainer = { innerHTML: '' };
+        document.getElementById = (id) => id === 'gestionsCalendarContainer' ? dummyContainer : null;
+
+        renderGestionsCalendar();
+        assert(!dummyContainer.innerHTML.includes('calendar-error-state'), 'Renders calendar normally with sanitized data');
+
+    } finally {
+        console.warn = origConsoleWarn;
+        console.error = origConsoleError;
+    }
+});
+
 console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);
 
 // [TEST 22] Notifications Badge & FollowUpDueCount Test

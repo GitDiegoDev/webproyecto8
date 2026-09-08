@@ -2397,7 +2397,7 @@ form {
 
 @media (min-width: 640px) {
     .portfolio-kpis-grid {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         gap: 0.75rem;
     }
 }
@@ -2439,6 +2439,7 @@ form {
 .kpi-card.kpi-collected { border-left: 4px solid #4ade80; }
 .kpi-card.kpi-pending { border-left: 4px solid #f87171; }
 .kpi-card.kpi-recovery { border-left: 4px solid #fbbf24; }
+.kpi-card.kpi-pending-rate { border-left: 4px solid #f87171; }
 
 .daily-card.clickable {
     cursor: pointer;

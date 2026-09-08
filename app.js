@@ -701,7 +701,6 @@ function updateDailyDashboard() {
 
     targetClients.forEach(client => {
         const instVal = client.installmentAmount || 0;
-        monthTotalAmount += instVal;
 
         // Calculate paid vs pending for this client/installment
         let totalPaidForCuota = 0;
@@ -717,14 +716,10 @@ function updateDailyDashboard() {
 
         if (client.paymentStatus === 'paid') {
             monthPaidCount++;
-            monthCollectedAmount += instVal;
         } else if (client.paymentStatus === 'partial') {
             monthPartialCount++;
-            monthCollectedAmount += totalPaidForCuota;
-            monthPendingAmount += Math.max(0, instVal - totalPaidForCuota);
         } else {
             monthPendingCount++;
-            monthPendingAmount += instVal;
         }
 
         // Unmanaged check
@@ -791,7 +786,43 @@ function updateDailyDashboard() {
         }
     });
 
+    // Importe Cartera / Cobrado / Pendiente: se calcula desde el historial real
+    // de pagos (payments[]), no del estado en vivo del cliente, porque
+    // periodMonth avanza apenas se completa una cuota.
+    if (currentMonthFilter === 'all') {
+        monthTotalAmount = clients.reduce((sum, c) => sum + (c.installmentAmount || 0), 0);
+        monthCollectedAmount = clients.reduce((sum, c) => {
+            if (!Array.isArray(c.payments)) return sum;
+            return sum + c.payments.reduce((s, p) => s + (p.amount || 0), 0);
+        }, 0);
+    } else {
+        const cartelaClientIds = new Set();
+        let cartelaTotal = 0;
+        clients.forEach(c => {
+            const hasCurrentSlot = c.periodMonth === currentMonthFilter;
+            const paymentForMonth = Array.isArray(c.payments)
+                ? c.payments.find(p => p.periodMonth === currentMonthFilter)
+                : null;
+            if ((hasCurrentSlot || paymentForMonth) && !cartelaClientIds.has(c.id)) {
+                cartelaClientIds.add(c.id);
+                cartelaTotal += paymentForMonth
+                    ? (paymentForMonth.installmentAmount || c.installmentAmount || 0)
+                    : (c.installmentAmount || 0);
+            }
+        });
+        monthTotalAmount = cartelaTotal;
+
+        monthCollectedAmount = clients.reduce((sum, c) => {
+            if (!Array.isArray(c.payments)) return sum;
+            return sum + c.payments
+                .filter(p => p.periodMonth === currentMonthFilter)
+                .reduce((s, p) => s + (p.amount || 0), 0);
+        }, 0);
+    }
+    monthPendingAmount = Math.max(0, monthTotalAmount - monthCollectedAmount);
+
     const recoveryRate = monthTotalAmount > 0 ? ((monthCollectedAmount / monthTotalAmount) * 100).toFixed(1) : '0,0';
+    const pendingRate = monthTotalAmount > 0 ? ((monthPendingAmount / monthTotalAmount) * 100).toFixed(1) : '0,0';
     const totalPromisesEvaluated = promisesFulfilledCount + promisesBrokenCount;
     const promiseEffectiveness = totalPromisesEvaluated > 0 ? ((promisesFulfilledCount / totalPromisesEvaluated) * 100).toFixed(1) : '0,0';
 
@@ -808,6 +839,7 @@ function updateDailyDashboard() {
     setTxt('dashMonthPendingAmount', formatCurrency(monthPendingAmount));
     setTxt('dashMonthPendingCount', `${monthPendingCount} pendientes`);
     setTxt('dashMonthRecoveryRate', `${recoveryRate.replace('.', ',')}%`);
+    setTxt('dashMonthPendingRate', `${pendingRate.replace('.', ',')}%`);
     setTxt('dashMonthPartialCount', `${monthPartialCount} pagos parciales`);
 
     setTxt('dashUnmanagedCount', unmanagedCount);
@@ -3279,39 +3311,52 @@ function setupGestionsViewTabs() {
 
 function getAllCalendarActions() {
     const actionsMap = {};
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
     clients.forEach(client => {
-        if (Array.isArray(client.gestiones)) {
-            client.gestiones.forEach(g => {
-                if (g.nextFollowUpDate) {
-                    const dateKey = g.nextFollowUpDate;
-                    if (!actionsMap[dateKey]) actionsMap[dateKey] = [];
-                    const actionText = (g.nextAction && g.nextAction.trim()) ? g.nextAction.trim() : 'Seguimiento programado';
-                    actionsMap[dateKey].push({
-                        type: 'gestion',
-                        text: actionText,
-                        client: client,
-                        date: dateKey
-                    });
-                }
-            });
-        }
+        try {
+            if (Array.isArray(client.gestiones)) {
+                client.gestiones.forEach(g => {
+                    if (g.nextFollowUpDate) {
+                        if (!dateRegex.test(g.nextFollowUpDate)) {
+                            console.warn('Fecha de seguimiento inválida descartada:', g.nextFollowUpDate, client);
+                            return;
+                        }
+                        const dateKey = g.nextFollowUpDate;
+                        if (!actionsMap[dateKey]) actionsMap[dateKey] = [];
+                        const actionText = (g.nextAction && g.nextAction.trim()) ? g.nextAction.trim() : 'Seguimiento programado';
+                        actionsMap[dateKey].push({
+                            type: 'gestion',
+                            text: actionText,
+                            client: client,
+                            date: dateKey
+                        });
+                    }
+                });
+            }
 
-        if (Array.isArray(client.promises)) {
-            client.promises.forEach(pr => {
-                if (pr.promisedDate && (pr.status === 'pendiente' || pr.status === 'vencida')) {
-                    const dateKey = pr.promisedDate;
-                    if (!actionsMap[dateKey]) actionsMap[dateKey] = [];
-                    const amountStr = formatCurrency(pr.promisedAmount || 0);
-                    actionsMap[dateKey].push({
-                        type: 'promise',
-                        text: `Verificar promesa de pago: ${amountStr}`,
-                        client: client,
-                        date: dateKey,
-                        status: pr.status
-                    });
-                }
-            });
+            if (Array.isArray(client.promises)) {
+                client.promises.forEach(pr => {
+                    if (pr.promisedDate && (pr.status === 'pendiente' || pr.status === 'vencida')) {
+                        if (!dateRegex.test(pr.promisedDate)) {
+                            console.warn('Fecha de promesa inválida descartada:', pr.promisedDate, client);
+                            return;
+                        }
+                        const dateKey = pr.promisedDate;
+                        if (!actionsMap[dateKey]) actionsMap[dateKey] = [];
+                        const amountStr = formatCurrency(pr.promisedAmount || 0);
+                        actionsMap[dateKey].push({
+                            type: 'promise',
+                            text: `Verificar promesa de pago: ${amountStr}`,
+                            client: client,
+                            date: dateKey,
+                            status: pr.status
+                        });
+                    }
+                });
+            }
+        } catch (err) {
+            console.warn('Error al procesar cliente para el calendario:', err, client);
         }
     });
 
@@ -3322,110 +3367,123 @@ function renderGestionsCalendar() {
     const container = document.getElementById('gestionsCalendarContainer');
     if (!container) return;
 
-    updatePromisesStatuses();
-    const actionsMap = getAllCalendarActions();
-    const todayStr = getToday();
+    try {
+        updatePromisesStatuses();
+        const actionsMap = getAllCalendarActions();
+        const todayStr = getToday();
 
-    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-    const currentMonthTitle = `${monthNames[calendarMonth]} ${calendarYear}`;
+        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const currentMonthTitle = `${monthNames[calendarMonth]} ${calendarYear}`;
 
-    let html = `
-        <div class="calendar-wrapper">
-            <div class="calendar-header">
-                <div class="calendar-title-box">
-                    <span class="calendar-title">${escapeHtml(currentMonthTitle)}</span>
-                    <button type="button" class="calendar-today-btn" onclick="goToCalendarToday()">Hoy</button>
+        let html = `
+            <div class="calendar-wrapper">
+                <div class="calendar-header">
+                    <div class="calendar-title-box">
+                        <span class="calendar-title">${escapeHtml(currentMonthTitle)}</span>
+                        <button type="button" class="calendar-today-btn" onclick="goToCalendarToday()">Hoy</button>
+                    </div>
+                    <div style="display: flex; gap: 0.35rem;">
+                        <button type="button" class="calendar-nav-btn" onclick="navigateCalendarMonth(-1)" aria-label="Mes anterior"><i class="fas fa-chevron-left"></i></button>
+                        <button type="button" class="calendar-nav-btn" onclick="navigateCalendarMonth(1)" aria-label="Mes siguiente"><i class="fas fa-chevron-right"></i></button>
+                    </div>
                 </div>
-                <div style="display: flex; gap: 0.35rem;">
-                    <button type="button" class="calendar-nav-btn" onclick="navigateCalendarMonth(-1)" aria-label="Mes anterior"><i class="fas fa-chevron-left"></i></button>
-                    <button type="button" class="calendar-nav-btn" onclick="navigateCalendarMonth(1)" aria-label="Mes siguiente"><i class="fas fa-chevron-right"></i></button>
+
+                <div class="calendar-grid">
+                    <div class="calendar-day-header">Lun</div>
+                    <div class="calendar-day-header">Mar</div>
+                    <div class="calendar-day-header">Mié</div>
+                    <div class="calendar-day-header">Jue</div>
+                    <div class="calendar-day-header">Vie</div>
+                    <div class="calendar-day-header">Sáb</div>
+                    <div class="calendar-day-header">Dom</div>
+        `;
+
+        const firstDay = new Date(calendarYear, calendarMonth, 1);
+        const startDayIndex = (firstDay.getDay() + 6) % 7; // Monday = 0
+        const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+        const daysInPrevMonth = new Date(calendarYear, calendarMonth, 0).getDate();
+
+        // Prev month padding
+        const prevMonthYear = calendarMonth === 0 ? calendarYear - 1 : calendarYear;
+        const prevMonth = calendarMonth === 0 ? 11 : calendarMonth - 1;
+
+        for (let i = startDayIndex - 1; i >= 0; i--) {
+            const dayNum = daysInPrevMonth - i;
+            const dateStr = `${prevMonthYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+            const actions = actionsMap[dateStr] || [];
+            const isToday = dateStr === todayStr;
+            const isSelected = dateStr === selectedCalendarDate;
+            const count = actions.length;
+
+            html += `
+                <div class="calendar-day-cell other-month ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
+                    <span class="day-number">${dayNum}</span>
+                    ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
+                </div>
+            `;
+        }
+
+        // Current month days
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const actions = actionsMap[dateStr] || [];
+            const isToday = dateStr === todayStr;
+            const isSelected = dateStr === selectedCalendarDate;
+            const count = actions.length;
+
+            html += `
+                <div class="calendar-day-cell ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
+                    <span class="day-number">${d}</span>
+                    ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
+                </div>
+            `;
+        }
+
+        // Next month padding
+        const totalCellsSoFar = startDayIndex + daysInMonth;
+        const nextPadding = (7 - (totalCellsSoFar % 7)) % 7;
+        const nextMonthYear = calendarMonth === 11 ? calendarYear + 1 : calendarYear;
+        const nextMonth = calendarMonth === 11 ? 0 : calendarMonth + 1;
+
+        for (let d = 1; d <= nextPadding; d++) {
+            const dateStr = `${nextMonthYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const actions = actionsMap[dateStr] || [];
+            const isToday = dateStr === todayStr;
+            const isSelected = dateStr === selectedCalendarDate;
+            const count = actions.length;
+
+            html += `
+                <div class="calendar-day-cell other-month ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
+                    <span class="day-number">${d}</span>
+                    ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
+                </div>
+            `;
+        }
+
+        html += `
                 </div>
             </div>
+        `;
 
-            <div class="calendar-grid">
-                <div class="calendar-day-header">Lun</div>
-                <div class="calendar-day-header">Mar</div>
-                <div class="calendar-day-header">Mié</div>
-                <div class="calendar-day-header">Jue</div>
-                <div class="calendar-day-header">Vie</div>
-                <div class="calendar-day-header">Sáb</div>
-                <div class="calendar-day-header">Dom</div>
-    `;
+        // Render day actions list if selectedCalendarDate has actions
+        const selectedActions = selectedCalendarDate ? (actionsMap[selectedCalendarDate] || []) : [];
+        if (selectedCalendarDate && selectedActions.length > 0) {
+            html += renderDayActionsList(selectedCalendarDate, selectedActions);
+        }
 
-    const firstDay = new Date(calendarYear, calendarMonth, 1);
-    const startDayIndex = (firstDay.getDay() + 6) % 7; // Monday = 0
-    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-    const daysInPrevMonth = new Date(calendarYear, calendarMonth, 0).getDate();
-
-    // Prev month padding
-    const prevMonthYear = calendarMonth === 0 ? calendarYear - 1 : calendarYear;
-    const prevMonth = calendarMonth === 0 ? 11 : calendarMonth - 1;
-
-    for (let i = startDayIndex - 1; i >= 0; i--) {
-        const dayNum = daysInPrevMonth - i;
-        const dateStr = `${prevMonthYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-        const actions = actionsMap[dateStr] || [];
-        const isToday = dateStr === todayStr;
-        const isSelected = dateStr === selectedCalendarDate;
-        const count = actions.length;
-
-        html += `
-            <div class="calendar-day-cell other-month ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
-                <span class="day-number">${dayNum}</span>
-                ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
+        container.innerHTML = html;
+    } catch (error) {
+        console.error('Error al renderizar el calendario de gestiones:', error);
+        container.innerHTML = `
+            <div class="calendar-error-state" style="text-align:center; padding:2rem 1rem; color:var(--text-secondary);">
+                <i class="fas fa-exclamation-triangle" style="font-size:2rem; color:var(--danger); margin-bottom:0.75rem;"></i>
+                <p style="font-weight:600; margin-bottom:0.75rem;">No se pudo cargar el calendario</p>
+                <button type="button" class="btn-secondary btn-sm" onclick="renderGestionsCalendar()">
+                    <i class="fas fa-sync-alt"></i> Reintentar
+                </button>
             </div>
         `;
     }
-
-    // Current month days
-    for (let d = 1; d <= daysInMonth; d++) {
-        const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const actions = actionsMap[dateStr] || [];
-        const isToday = dateStr === todayStr;
-        const isSelected = dateStr === selectedCalendarDate;
-        const count = actions.length;
-
-        html += `
-            <div class="calendar-day-cell ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
-                <span class="day-number">${d}</span>
-                ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
-            </div>
-        `;
-    }
-
-    // Next month padding
-    const totalCellsSoFar = startDayIndex + daysInMonth;
-    const nextPadding = (7 - (totalCellsSoFar % 7)) % 7;
-    const nextMonthYear = calendarMonth === 11 ? calendarYear + 1 : calendarYear;
-    const nextMonth = calendarMonth === 11 ? 0 : calendarMonth + 1;
-
-    for (let d = 1; d <= nextPadding; d++) {
-        const dateStr = `${nextMonthYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const actions = actionsMap[dateStr] || [];
-        const isToday = dateStr === todayStr;
-        const isSelected = dateStr === selectedCalendarDate;
-        const count = actions.length;
-
-        html += `
-            <div class="calendar-day-cell other-month ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" onclick="selectCalendarDate('${dateStr}')">
-                <span class="day-number">${d}</span>
-                ${count > 0 ? `<span class="day-badge">${count}</span>` : ''}
-            </div>
-        `;
-    }
-
-    html += `
-            </div>
-        </div>
-    `;
-
-    // Render day actions list if selectedCalendarDate has actions
-    const selectedActions = selectedCalendarDate ? (actionsMap[selectedCalendarDate] || []) : [];
-    if (selectedCalendarDate && selectedActions.length > 0) {
-        html += renderDayActionsList(selectedCalendarDate, selectedActions);
-    }
-
-    container.innerHTML = html;
 }
 
 function renderDayActionsList(dateStr, actions) {
