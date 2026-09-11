@@ -187,7 +187,7 @@ function sanitizeClientSchema(client) {
         client.installmentNumber = minicuotaParsed.currentInstallment;
         client.totalInstallments = minicuotaParsed.totalInstallments;
     }
-    if (client.penaltyRate === undefined || client.penaltyRate === null) client.penaltyRate = 1.0; // 1% per day default
+    if (client.penaltyRate === undefined || client.penaltyRate === null || client.penaltyRate === 1.0) client.penaltyRate = 0.32; // 0.32% per day default
     if (!client.periodMonth) client.periodMonth = getToday().substring(0, 7);
 
     if (!client.domicilio) client.domicilio = '';
@@ -271,7 +271,7 @@ function formatTwoDigitNumber(numStr) {
     return trimmed.padStart(2, '0').slice(-2);
 }
 
-function calculatePunitorios(installmentAmount, daysOverdue, penaltyRate = 1.0) {
+function calculatePunitorios(installmentAmount, daysOverdue, penaltyRate = 0.32) {
     if (!installmentAmount || daysOverdue <= 0 || !penaltyRate || penaltyRate <= 0) return 0;
     const dailyInterest = (installmentAmount * (penaltyRate / 100)) * daysOverdue;
     return Math.round(dailyInterest * 100) / 100;
@@ -358,7 +358,7 @@ function getDemoData() {
             requestNumber: '01',
             installmentNumber: 5,
             totalInstallments: 12,
-            penaltyRate: 1.0,
+            penaltyRate: 0.32,
             periodMonth: currentMonth,
             dni: '14.234.567',
             type: 'jubilado',
@@ -2139,7 +2139,7 @@ function renderClientCard(client) {
 
     let overduePenaltyHtml = '';
     if (client.isOverdue && punitorios > 0) {
-        overduePenaltyHtml = `<span class="penalty-badge" title="Interés punitorio por mora (${client.penaltyRate || 1.0}% diario)"><i class="fas fa-percent"></i> Punitorios: ${formatCurrency(punitorios)}</span>`;
+        overduePenaltyHtml = `<span class="penalty-badge" title="Interés punitorio por mora (${client.penaltyRate || 0.32}% diario)"><i class="fas fa-percent"></i> Punitorios: ${formatCurrency(punitorios)}</span>`;
     }
 
     let todayBadgeHtml = '';
@@ -3936,7 +3936,7 @@ function openAddModal() {
     els.requestNumber.value = '';
     els.installmentNumber.value = '1';
     els.totalInstallments.value = '12';
-    els.penaltyRate.value = '1.0';
+    els.penaltyRate.value = '0.32';
     els.periodMonth.value = getToday().substring(0, 7);
     els.clientDni.value = '';
     if (els.clientDomicilio) els.clientDomicilio.value = '';
@@ -3960,7 +3960,7 @@ function editClient(id) {
     els.requestNumber.value = client.requestNumber || '';
     els.installmentNumber.value = client.installmentNumber || 1;
     els.totalInstallments.value = client.totalInstallments || 12;
-    els.penaltyRate.value = client.penaltyRate !== undefined ? client.penaltyRate : 1.0;
+    els.penaltyRate.value = client.penaltyRate !== undefined ? client.penaltyRate : 0.32;
     els.periodMonth.value = client.periodMonth || getToday().substring(0, 7);
     els.clientDni.value = client.dni || '';
     els.clientType.value = client.type;
@@ -3996,7 +3996,7 @@ function handleSaveClient(e) {
         requestNumber: formatRequestNumber(els.requestNumber.value),
         installmentNumber: parseInt(els.installmentNumber.value) || 1,
         totalInstallments: parseInt(els.totalInstallments.value) || 12,
-        penaltyRate: parseFloat(els.penaltyRate.value) >= 0 ? parseFloat(els.penaltyRate.value) : 1.0,
+        penaltyRate: parseFloat(els.penaltyRate.value) >= 0 ? parseFloat(els.penaltyRate.value) : 0.32,
         periodMonth: els.periodMonth.value || getToday().substring(0, 7),
         dni: els.clientDni.value.trim(),
         type: els.clientType.value,
@@ -4118,11 +4118,33 @@ function openPaymentModal(id) {
     const instNum = client.installmentNumber || 1;
     const previousPaid = getPreviousPaidForInstallment(client, periodMonth, instNum);
     const remainingCuota = Math.max(0, client.installmentAmount - previousPaid);
+    const calculatedPenaltyForSuggestion = (client.isOverdue && client.daysOverdue > 0)
+        ? calculatePunitorios(client.installmentAmount, client.daysOverdue, client.penaltyRate)
+        : 0;
+
+    const amountGivenHintEl = document.getElementById('amountGivenHint');
+
+    if (previousPaid > 0) {
+        const suggestedAmount = remainingCuota + calculatedPenaltyForSuggestion;
+        els.amountGiven.value = suggestedAmount > 0
+            ? suggestedAmount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : '';
+
+        if (amountGivenHintEl) {
+            amountGivenHintEl.textContent = `Saldo pendiente de esta cuota (con punitorios): ${formatCurrency(suggestedAmount)}`;
+            amountGivenHintEl.style.display = 'block';
+        }
+    } else {
+        els.amountGiven.value = '';
+        if (amountGivenHintEl) {
+            amountGivenHintEl.textContent = '';
+            amountGivenHintEl.style.display = 'none';
+        }
+    }
 
     const defaultAmountToPay = (previousPaid > 0 && remainingCuota > 0) ? remainingCuota : client.installmentAmount;
 
     els.paidAmount.value = defaultAmountToPay ? defaultAmountToPay.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
-    els.amountGiven.value = '';
 
     if (previousPaid > 0 || client.paymentStatus === 'partial') {
         els.paymentType.value = remainingCuota > 0 ? 'partial' : 'total';
@@ -4135,7 +4157,7 @@ function openPaymentModal(id) {
     const paymentTimeEl = document.getElementById('paymentTime');
     const paymentUserEl = document.getElementById('paymentUser');
 
-    const calculatedPenalty = (client.isOverdue && client.daysOverdue > 0) ? calculatePunitorios(client.installmentAmount, client.daysOverdue, client.penaltyRate) : 0;
+    const calculatedPenalty = calculatedPenaltyForSuggestion;
     if (punitoriosGeneratedEl) punitoriosGeneratedEl.value = calculatedPenalty.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (punitoriosWaivedEl) punitoriosWaivedEl.value = '0,00';
     if (paymentTimeEl) paymentTimeEl.value = getCurrentTime();
@@ -4182,8 +4204,32 @@ function updatePaymentCalculationBox(client) {
     const daysOverdueVal = els.daysOverdue ? (parseInt(els.daysOverdue.value) || 0) : client.daysOverdue;
 
     const punitoriosGen = isOverdueChecked && daysOverdueVal > 0 ? calculatePunitorios(fullCuota, daysOverdueVal, client.penaltyRate) : 0;
-    const punitoriosWaived = parseCurrencyInput(document.getElementById('punitoriosWaived') ? document.getElementById('punitoriosWaived').value : 0);
+    const punitoriosSectionEl = document.getElementById('punitoriosSection');
+    const punitoriosSummaryTextEl = document.getElementById('punitoriosSummaryText');
+    const punitoriosWaivedEl = document.getElementById('punitoriosWaived');
+
+    if (punitoriosGen > 0) {
+        if (punitoriosSectionEl) punitoriosSectionEl.style.display = 'block';
+    } else {
+        if (punitoriosSectionEl) punitoriosSectionEl.style.display = 'none';
+    }
+
+    const punitoriosWaived = parseCurrencyInput(punitoriosWaivedEl ? punitoriosWaivedEl.value : 0);
     const netPenalty = Math.max(0, punitoriosGen - punitoriosWaived);
+
+    if (punitoriosSummaryTextEl) {
+        if (punitoriosGen > 0) {
+            if (punitoriosWaived >= punitoriosGen && punitoriosGen > 0) {
+                punitoriosSummaryTextEl.textContent = 'Vas a perdonar el total de los punitorios';
+                punitoriosSummaryTextEl.style.color = '#16a34a';
+            } else {
+                punitoriosSummaryTextEl.textContent = `Vas a cobrar ${formatCurrency(netPenalty)} de ${formatCurrency(punitoriosGen)} en punitorios`;
+                punitoriosSummaryTextEl.style.color = '#1e293b';
+            }
+        } else {
+            punitoriosSummaryTextEl.textContent = '';
+        }
+    }
 
     const totalRequiredForFull = fullCuota + netPenalty;
     const remainingToComplete = Math.max(0, totalRequiredForFull - previousPaid);
@@ -4207,7 +4253,7 @@ function updatePaymentCalculationBox(client) {
     }
 
     if (punitoriosGen > 0) {
-        html += `<div class="calc-row penalty"><span>Punitorios Generados (${daysOverdueVal} días, ${client.penaltyRate || 1.0}%/día):</span> <strong>+ ${formatCurrency(punitoriosGen)}</strong></div>`;
+        html += `<div class="calc-row penalty"><span>Punitorios Generados (${daysOverdueVal} días, ${client.penaltyRate || 0.32}%/día):</span> <strong>+ ${formatCurrency(punitoriosGen)}</strong></div>`;
         if (punitoriosWaived > 0) {
             html += `<div class="calc-row" style="color:var(--success);"><span>Punitorios Condonados:</span> <strong>- ${formatCurrency(punitoriosWaived)}</strong></div>`;
         }
@@ -4298,16 +4344,22 @@ function handleSavePayment(e) {
     const punitoriosWaived = parseCurrencyInput(document.getElementById('punitoriosWaived') ? document.getElementById('punitoriosWaived').value : 0);
     const netPenalty = Math.max(0, punitoriosGen - punitoriosWaived);
 
-    // Exact amount delivered / collected in this transaction
+    // Exact amount delivered / collected in this transaction.
+    // "Importe Entregado" (amountGivenVal) es SIEMPRE la fuente de verdad de lo
+    // que realmente se cobró — nunca se debe recortar contra "Importe de Cuota"
+    // (paidAmountVal), que es solo un valor de referencia/cálculo, no un tope.
     let currentCollected = 0;
-    if (amountGivenVal > 0 && paidAmountVal > 0) {
-        currentCollected = Math.min(amountGivenVal, paidAmountVal);
-    } else if (amountGivenVal > 0) {
+    if (amountGivenVal > 0) {
         currentCollected = amountGivenVal;
     } else if (paidAmountVal > 0) {
         currentCollected = paidAmountVal;
     } else {
-        currentCollected = client.installmentAmount || 0;
+        currentCollected = 0; // nunca asumir un pago que no se ingresó
+    }
+
+    if (currentCollected <= 0) {
+        showToast('Ingresá el importe entregado antes de guardar el pago.', 'error');
+        return;
     }
 
     const previousPaid = getPreviousPaidForInstallment(client, payPeriodMonth, client.installmentNumber);
@@ -4734,6 +4786,48 @@ function setupEventListeners() {
             });
         }
     });
+
+    const punitoriosWaivedInput = document.getElementById('punitoriosWaived');
+    if (punitoriosWaivedInput) {
+        ['input', 'change'].forEach(evtType => {
+            punitoriosWaivedInput.addEventListener(evtType, () => {
+                const client = clients.find(c => c.id === els.paymentClientId.value);
+                if (client) updatePaymentCalculationBox(client);
+            });
+        });
+    }
+
+    const btnWaiveNone = document.getElementById('btnWaiveNone');
+    const btnWaiveAll = document.getElementById('btnWaiveAll');
+    const btnWaivePartial = document.getElementById('btnWaivePartial');
+
+    if (btnWaiveNone) {
+        btnWaiveNone.addEventListener('click', () => {
+            if (punitoriosWaivedInput) punitoriosWaivedInput.value = '0,00';
+            const client = clients.find(c => c.id === els.paymentClientId.value);
+            if (client) updatePaymentCalculationBox(client);
+        });
+    }
+
+    if (btnWaiveAll) {
+        btnWaiveAll.addEventListener('click', () => {
+            const punitoriosGeneratedEl = document.getElementById('punitoriosGenerated');
+            if (punitoriosWaivedInput && punitoriosGeneratedEl) {
+                punitoriosWaivedInput.value = punitoriosGeneratedEl.value;
+            }
+            const client = clients.find(c => c.id === els.paymentClientId.value);
+            if (client) updatePaymentCalculationBox(client);
+        });
+    }
+
+    if (btnWaivePartial) {
+        btnWaivePartial.addEventListener('click', () => {
+            if (punitoriosWaivedInput) {
+                punitoriosWaivedInput.focus();
+                punitoriosWaivedInput.select();
+            }
+        });
+    }
 
     // Backup & Restore Events
     els.exportDataBtn.addEventListener('click', exportData);
