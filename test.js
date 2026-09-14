@@ -18,6 +18,7 @@ global.document = {
             style: {},
             classList: { add: () => {}, remove: () => {} },
             appendChild: () => {},
+            remove: () => {},
             _text: ''
         };
         Object.defineProperty(el, 'textContent', {
@@ -1271,8 +1272,56 @@ runTest('27. Collection Management Report Calculations & Date Ranges Test', () =
     assert.strictEqual(reportData.pagosConcretados, 1, '1 Pago concretado');
     assert.strictEqual(reportData.montoCobrado, 25000, 'Total cobrado $25.000');
     assert.strictEqual(reportData.periodGestiones.length, 2, 'Detailed gestiones count is 2');
+    assert.strictEqual(reportData.reportGeneratedForToday, todayStr, 'reportGeneratedForToday matches todayStr');
 
-    // 3. Test Empty Period Handling
+    // 3. Test Excel Export Data Logic (Task 1) & Preview Titles (Task 2)
+    // Mock XLSX
+    let exportedSheets = {};
+    let writtenFile = null;
+    global.XLSX = {
+        utils: {
+            aoa_to_sheet: (data) => data,
+            book_new: () => ({ Sheets: {}, SheetNames: [] }),
+            book_append_sheet: (wb, ws, name) => {
+                wb.SheetNames.push(name);
+                wb.Sheets[name] = ws;
+                exportedSheets[name] = ws;
+            }
+        },
+        writeFile: (wb, fileName) => {
+            writtenFile = fileName;
+        }
+    };
+
+    exportReportExcel(reportData);
+
+    assert.ok(exportedSheets['Gestiones'], 'Sheet "Gestiones" created');
+    assert.ok(exportedSheets['Pagos del Período'], 'Sheet "Pagos del Período" created');
+    assert.ok(!exportedSheets['Gestiones'][0].includes('Importe cobrado'), 'Gestiones sheet headers do not contain Importe cobrado');
+    assert.deepStrictEqual(exportedSheets['Pagos del Período'][0], ['Fecha', 'Cliente', 'DNI', 'Importe Cobrado', 'Medio de Pago', 'Período/Cuota'], 'Pagos del Período sheet headers match expected');
+    assert.strictEqual(exportedSheets['Pagos del Período'].length, 2, 'Pagos del Período contains header + 1 payment row');
+    assert.strictEqual(exportedSheets['Pagos del Período'][1][3], 25000, 'Payment amount in second sheet is 25000');
+
+    // Test preview title rendering
+    let previewBodyContent = '';
+    const mockPreviewBody = {
+        set innerHTML(val) { previewBodyContent = val; },
+        get innerHTML() { return previewBodyContent; }
+    };
+
+    const origGetEl = document.getElementById;
+    document.getElementById = (id) => {
+        if (id === 'reportPreviewBody') return mockPreviewBody;
+        return origGetEl(id);
+    };
+
+    renderReportPreview(reportData);
+    document.getElementById = origGetEl;
+
+    assert.ok(previewBodyContent.includes('ESTADO DE CARTERA (A HOY, NO DEL PERÍODO SELECCIONADO)'), 'Preview HTML contains clarified portfolio status header');
+    assert.ok(previewBodyContent.includes('CASOS EN SEGUIMIENTO A HOY'), 'Preview HTML contains clarified cases in follow-up header');
+
+    // 4. Test Empty Period Handling
     const emptyReport = calculateReportData({
         periodPreset: 'custom',
         customFrom: '1999-01-01',
