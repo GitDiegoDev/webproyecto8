@@ -3459,6 +3459,7 @@ function calculateReportData(options = {}) {
         clientIdScope,
         userCobrador,
         generatedAt: new Date().toLocaleString('es-AR'),
+        reportGeneratedForToday: todayStr,
         branchName: targetClients.length > 0 && targetClients[0].branchNumber ? `Sucursal ${formatBranchNumber(targetClients[0].branchNumber)}` : 'Sucursal General',
 
         // Section 1 - Summary numbers
@@ -3585,7 +3586,7 @@ function renderReportPreview(data) {
 
             <!-- SECCIÓN 2: ESTADO DE CARTERA -->
             <div class="report-section">
-                <h3 class="report-section-title"><i class="fas fa-chart-pie"></i> ESTADO DE CARTERA</h3>
+                <h3 class="report-section-title"><i class="fas fa-chart-pie"></i> ESTADO DE CARTERA (A HOY, NO DEL PERÍODO SELECCIONADO)</h3>
                 <div class="report-status-pills">
                     <div class="report-status-pill">🟢 Pagados: <strong>${data.pagados}</strong></div>
                     <div class="report-status-pill">🟠 Reprogramados: <strong>${data.reprogramados}</strong></div>
@@ -3617,7 +3618,7 @@ function renderReportPreview(data) {
 
             <!-- SECCIÓN 4: CASOS EN SEGUIMIENTO -->
             <div class="report-section">
-                <h3 class="report-section-title"><i class="fas fa-clock"></i> CASOS EN SEGUIMIENTO (${data.pendingFollowUpCases.length})</h3>
+                <h3 class="report-section-title"><i class="fas fa-clock"></i> CASOS EN SEGUIMIENTO A HOY (${data.pendingFollowUpCases.length})</h3>
                 <div class="report-table-wrapper">
                     <table class="report-table">
                         <thead>
@@ -3764,7 +3765,7 @@ async function generateReportPDF(data) {
     y = rowY + (colIdx > 0 ? 12 : 4);
 
     // --- SECCIÓN 2: ESTADO DE CARTERA ---
-    drawSectionTitle('ESTADO DE CARTERA');
+    drawSectionTitle('ESTADO DE CARTERA (A HOY)');
 
     const statusList = [
         ['Pagados', String(data.pagados)],
@@ -3867,7 +3868,7 @@ async function generateReportPDF(data) {
     y += 4;
 
     // --- SECCIÓN 4: CASOS EN SEGUIMIENTO ---
-    drawSectionTitle('CASOS EN SEGUIMIENTO');
+    drawSectionTitle('CASOS EN SEGUIMIENTO (A HOY)');
 
     const followUpCols = [
         { header: 'Cliente', width: 38 },
@@ -3963,7 +3964,7 @@ function exportReportExcel(data) {
         'Fecha', 'Hora', 'Cliente', 'DNI', 'Solicitud',
         'Tipo de gestión', 'Canal', 'Resultado', 'Estado',
         'Observación', 'Próxima acción', 'Fecha de seguimiento',
-        'Fecha prometida', 'Importe prometido', 'Importe cobrado', 'Usuario/cobrador'
+        'Fecha prometida', 'Importe prometido', 'Usuario/cobrador'
     ];
 
     const rows = [headers];
@@ -3973,11 +3974,6 @@ function exportReportExcel(data) {
             let promise = null;
             if (gestion.promiseId && Array.isArray(client.promises)) {
                 promise = client.promises.find(pr => pr.id === gestion.promiseId) || null;
-            }
-
-            let pagoAssoc = null;
-            if (Array.isArray(client.payments)) {
-                pagoAssoc = client.payments.find(p => p.date === gestion.date) || null;
             }
 
             rows.push([
@@ -3995,7 +3991,6 @@ function exportReportExcel(data) {
                 gestion.nextFollowUpDate || '',
                 promise ? promise.promisedDate : '',
                 promise ? (promise.promisedAmount || 0) : 0,
-                pagoAssoc ? (pagoAssoc.amount || 0) : 0,
                 data.userCobrador || 'Cobrador'
             ]);
         });
@@ -4004,6 +3999,45 @@ function exportReportExcel(data) {
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Gestiones');
+
+    // Hoja 2: Pagos del Período
+    let targetClients = typeof clients !== 'undefined' ? clients : [];
+    if (data.clientIdScope !== 'all' && data.clientIdScope) {
+        targetClients = targetClients.filter(c => c.id === data.clientIdScope);
+    }
+
+    const pagosHeaders = ['Fecha', 'Cliente', 'DNI', 'Importe Cobrado', 'Medio de Pago', 'Período/Cuota'];
+    const pagosRows = [pagosHeaders];
+
+    targetClients.forEach(client => {
+        if (Array.isArray(client.payments)) {
+            client.payments.forEach(p => {
+                const pDate = p.date || '';
+                if (pDate >= data.fromDate && pDate <= data.toDate) {
+                    let periodCuota = '';
+                    if (p.periodMonth && p.installmentNumber) {
+                        periodCuota = `${formatMonthYear(p.periodMonth)} (Cuota ${p.installmentNumber})`;
+                    } else if (p.periodMonth) {
+                        periodCuota = formatMonthYear(p.periodMonth);
+                    } else if (p.installmentNumber) {
+                        periodCuota = `Cuota ${p.installmentNumber}`;
+                    }
+
+                    pagosRows.push([
+                        p.date || '',
+                        client.name || '',
+                        client.dni || '',
+                        p.amount || 0,
+                        p.paymentMethod || 'Efectivo',
+                        periodCuota
+                    ]);
+                }
+            });
+        }
+    });
+
+    const wsPagos = XLSX.utils.aoa_to_sheet(pagosRows);
+    XLSX.utils.book_append_sheet(wb, wsPagos, 'Pagos del Período');
 
     const fileName = `Informe_Gestion_Cobranza_${data.fromDate}.xlsx`;
     XLSX.writeFile(wb, fileName);
