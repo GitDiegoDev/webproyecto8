@@ -963,13 +963,16 @@
                 <!-- Injected via JS -->
             </div>
 
-            <!-- View switch tabs: Lista vs Calendario -->
+            <!-- View switch tabs: Lista vs Calendario & Botón Generar informe -->
             <div class="gestions-view-tabs" id="gestionsViewTabs">
                 <button type="button" class="gestions-view-tab active" id="gestionsListViewBtn" data-view="list">
                     📋 Lista
                 </button>
                 <button type="button" class="gestions-view-tab" id="gestionsCalendarViewBtn" data-view="calendar">
                     📅 Calendario
+                </button>
+                <button type="button" class="btn-primary btn-sm" id="openReportConfigBtn" style="margin-left: auto; align-self: center; white-space: nowrap;">
+                    <i class="fas fa-chart-bar"></i> Generar informe
                 </button>
             </div>
 
@@ -1204,6 +1207,86 @@
                 <button type="button" class="btn-primary" id="confirmImportBtn">
                     <i class="fas fa-file-import"></i> Confirmar Importación
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Configuración del Informe de Gestión -->
+    <div class="modal" id="reportConfigModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-medium">
+            <div class="modal-header">
+                <h2><i class="fas fa-chart-line"></i> Informe de Gestión de Cobranza</h2>
+                <button class="btn-close" id="closeReportConfigModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form id="reportConfigForm">
+                <div class="form-group">
+                    <label for="reportPeriodSelect"><i class="fas fa-calendar-alt"></i> Período del Informe *</label>
+                    <select id="reportPeriodSelect" required>
+                        <option value="today">Hoy</option>
+                        <option value="last7">Últimos 7 días</option>
+                        <option value="this_month" selected>Este mes</option>
+                        <option value="last_month">Mes anterior</option>
+                        <option value="custom">Personalizado</option>
+                    </select>
+                </div>
+
+                <div id="reportCustomDatesRow" class="form-row" style="display: none;">
+                    <div class="form-group flex-1">
+                        <label for="reportDateFrom">Fecha Desde *</label>
+                        <input type="date" id="reportDateFrom">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="reportDateTo">Fecha Hasta *</label>
+                        <input type="date" id="reportDateTo">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="reportClientSelect"><i class="fas fa-user-tag"></i> Alcance de Clientes *</label>
+                    <select id="reportClientSelect" required>
+                        <option value="all" selected>Todos los clientes</option>
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelReportConfigBtn">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="generateReportBtn">
+                        <i class="fas fa-chart-pie"></i> Generar informe
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Vista Previa del Informe de Gestión -->
+    <div class="modal" id="reportPreviewModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2><i class="fas fa-file-invoice"></i> Vista Previa de Informe de Gestión</h2>
+                <button class="btn-close" id="closeReportPreviewModal" aria-label="Cerrar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="report-preview-body" id="reportPreviewBody" style="padding: 1.25rem; overflow-y: auto; max-height: 70vh;">
+                <!-- Dynamically rendered preview via JS -->
+            </div>
+
+            <div class="modal-footer form-actions">
+                <button type="button" class="btn-primary" id="downloadReportPdfBtn">
+                    <i class="fas fa-file-pdf"></i> Descargar PDF
+                </button>
+                <button type="button" class="btn-secondary" id="exportReportExcelBtn">
+                    <i class="fas fa-file-excel"></i> Exportar Excel
+                </button>
+                <button type="button" class="btn-secondary" id="shareReportBtn">
+                    <i class="fas fa-share-alt"></i> Compartir
+                </button>
+                <button type="button" class="btn-secondary" id="closeReportPreviewBtn">Cerrar</button>
             </div>
         </div>
     </div>

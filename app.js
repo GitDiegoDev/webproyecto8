@@ -3241,6 +3241,796 @@ function renderHistoryTable() {
 }
 
 // ========================================
+// MÓDULO PROFESIONAL DE INFORMES DE GESTIÓN DE COBRANZA
+// ========================================
+
+function getReportDateRange(periodPreset, customFrom = '', customTo = '') {
+    const today = new Date();
+    const todayStr = getToday();
+
+    if (periodPreset === 'today') {
+        return { fromDate: todayStr, toDate: todayStr };
+    }
+
+    if (periodPreset === 'last7') {
+        const d = new Date(today);
+        d.setDate(d.getDate() - 6);
+        const fromStr = d.toISOString().split('T')[0];
+        return { fromDate: fromStr, toDate: todayStr };
+    }
+
+    if (periodPreset === 'this_month') {
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
+        return {
+            fromDate: `${year}-${month}-01`,
+            toDate: `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+        };
+    }
+
+    if (periodPreset === 'last_month') {
+        const prevDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const year = prevDate.getFullYear();
+        const month = String(prevDate.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(year, prevDate.getMonth() + 1, 0).getDate();
+        return {
+            fromDate: `${year}-${month}-01`,
+            toDate: `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+        };
+    }
+
+    if (periodPreset === 'custom') {
+        const from = customFrom || todayStr;
+        const to = customTo || todayStr;
+        return { fromDate: from <= to ? from : to, toDate: from <= to ? to : from };
+    }
+
+    // Default to this month
+    return getReportDateRange('this_month');
+}
+
+function calculateReportData(options = {}) {
+    const {
+        periodPreset = 'this_month',
+        customFrom = '',
+        customTo = '',
+        clientIdScope = 'all',
+        userCobrador = 'Cobrador'
+    } = options;
+
+    const { fromDate, toDate } = getReportDateRange(periodPreset, customFrom, customTo);
+    const todayStr = getToday();
+
+    // 1. Determine target client scope
+    let targetClients = clients;
+    if (clientIdScope !== 'all' && clientIdScope) {
+        targetClients = clients.filter(c => c.id === clientIdScope);
+    }
+
+    // 2. Gather gestiones, promises and payments in date range
+    const managedClientIds = new Set();
+    const periodGestiones = [];
+    let countWhatsapp = 0;
+    let countLlamadas = 0;
+    let countVisitas = 0;
+    let countPromesas = 0;
+    let countReprogramaciones = 0;
+
+    targetClients.forEach(client => {
+        if (Array.isArray(client.gestiones)) {
+            client.gestiones.forEach(g => {
+                const gDate = g.date || '';
+                if (gDate >= fromDate && gDate <= toDate) {
+                    managedClientIds.add(client.id);
+                    periodGestiones.push({
+                        gestion: g,
+                        client: client
+                    });
+
+                    const typeLower = (g.type || '').toLowerCase();
+                    if (typeLower.includes('whatsapp') || typeLower.includes('mensaje')) {
+                        countWhatsapp++;
+                    } else if (typeLower.includes('llamada')) {
+                        countLlamadas++;
+                    } else if (typeLower.includes('visita')) {
+                        countVisitas++;
+                    }
+
+                    const resLower = (g.result || '').toLowerCase();
+                    if (resLower.includes('prometió') || resLower.includes('prometio') || g.promiseId) {
+                        countPromesas++;
+                    }
+                    if (resLower.includes('reprogramación') || resLower.includes('reprogramacion') || resLower.includes('refinanciación') || resLower.includes('refinanciacion')) {
+                        countReprogramaciones++;
+                    }
+                }
+            });
+        }
+    });
+
+    // Sort gestiones: newest first
+    periodGestiones.sort((a, b) => {
+        const keyA = (a.gestion.date || '') + (a.gestion.time || '');
+        const keyB = (b.gestion.date || '') + (b.gestion.time || '');
+        return keyB.localeCompare(keyA);
+    });
+
+    // 3. Payments concreted in date range
+    let countPagosConcretados = 0;
+    let totalMontoCobrado = 0;
+
+    targetClients.forEach(client => {
+        if (Array.isArray(client.payments)) {
+            client.payments.forEach(p => {
+                const pDate = p.date || '';
+                if (pDate >= fromDate && pDate <= toDate) {
+                    countPagosConcretados++;
+                    totalMontoCobrado += (p.amount || 0);
+                }
+            });
+        }
+    });
+
+    // 4. Pending follow-ups
+    const pendingFollowUpCases = [];
+    let countSeguimientosPendientes = 0;
+
+    targetClients.forEach(client => {
+        let latestGestion = null;
+        if (Array.isArray(client.gestiones) && client.gestiones.length > 0) {
+            const sortedG = [...client.gestiones].sort((a, b) => {
+                const keyA = (a.date || '') + (a.time || '');
+                const keyB = (b.date || '') + (b.time || '');
+                return keyB.localeCompare(keyA);
+            });
+            latestGestion = sortedG[0];
+        }
+
+        // Check if there is a pending follow up date or pending promise
+        let hasFutureFollowUp = false;
+        let followUpDate = '';
+        let nextActionText = '';
+
+        if (latestGestion && latestGestion.nextFollowUpDate) {
+            followUpDate = latestGestion.nextFollowUpDate;
+            nextActionText = latestGestion.nextAction || 'Seguimiento programado';
+            if (followUpDate >= todayStr) {
+                hasFutureFollowUp = true;
+            }
+        }
+
+        let pendingPromise = null;
+        if (Array.isArray(client.promises)) {
+            pendingPromise = client.promises.find(pr => pr.status === 'pendiente');
+            if (pendingPromise) {
+                if (!followUpDate || pendingPromise.promisedDate < followUpDate) {
+                    followUpDate = pendingPromise.promisedDate;
+                }
+                hasFutureFollowUp = true;
+                if (!nextActionText) nextActionText = `Verificar promesa de ${formatCurrency(pendingPromise.promisedAmount)}`;
+            }
+        }
+
+        if (hasFutureFollowUp || (client.paymentStatus !== 'paid' && latestGestion)) {
+            if (followUpDate >= todayStr) {
+                countSeguimientosPendientes++;
+            }
+
+            let situacion = 'En gestión';
+            if (client.isOverdue) situacion = `${client.daysOverdue} ${client.daysOverdue === 1 ? 'día' : 'días'} atrasado`;
+            else if (pendingPromise) situacion = 'Promesa de pago pendiente';
+            else if (latestGestion && latestGestion.result.toLowerCase().includes('reprogramación')) situacion = 'Solicita reprogramación';
+            else if (client.paymentStatus === 'partial') situacion = 'Pago parcial registrado';
+
+            pendingFollowUpCases.push({
+                client: client,
+                situacion: situacion,
+                ultimaGestion: latestGestion ? `${latestGestion.type} (${formatDate(latestGestion.date)})` : 'Sin registro',
+                proximaAccion: nextActionText || 'Recontactar cliente',
+                fechaSeguimiento: followUpDate ? formatDate(followUpDate) : '-',
+                estado: (followUpDate && followUpDate < todayStr) ? 'Vencido' : 'Pendiente'
+            });
+        }
+    });
+
+    // 5. Portfolio status breakdown
+    let countPagados = 0;
+    let countReprogramados = 0;
+    let countMorososEnGestion = 0;
+    let countPendientesPorFecha = 0;
+
+    targetClients.forEach(client => {
+        if (client.paymentStatus === 'paid') {
+            countPagados++;
+        } else if (Array.isArray(client.promises) && client.promises.some(pr => pr.status === 'pendiente')) {
+            countReprogramados++;
+        } else if (client.isOverdue || client.paymentStatus === 'overdue') {
+            countMorososEnGestion++;
+        } else {
+            countPendientesPorFecha++;
+        }
+    });
+
+    return {
+        fromDate,
+        toDate,
+        periodPreset,
+        clientIdScope,
+        userCobrador,
+        generatedAt: new Date().toLocaleString('es-AR'),
+        branchName: targetClients.length > 0 && targetClients[0].branchNumber ? `Sucursal ${formatBranchNumber(targetClients[0].branchNumber)}` : 'Sucursal General',
+
+        // Section 1 - Summary numbers
+        clientesGestionados: managedClientIds.size,
+        gestionesRealizadas: periodGestiones.length,
+        whatsapp: countWhatsapp,
+        llamadas: countLlamadas,
+        visitas: countVisitas,
+        promesas: countPromesas,
+        reprogramaciones: countReprogramaciones,
+        pagosConcretados: countPagosConcretados,
+        montoCobrado: totalMontoCobrado,
+        seguimientosPendientes: countSeguimientosPendientes,
+
+        // Section 2 - Portfolio status
+        pagados: countPagados,
+        reprogramados: countReprogramados,
+        morososEnGestion: countMorososEnGestion,
+        pendientesPorFecha: countPendientesPorFecha,
+
+        // Section 3 - Detailed Gestiones
+        periodGestiones: periodGestiones,
+
+        // Section 4 - Cases in Follow-up
+        pendingFollowUpCases: pendingFollowUpCases
+    };
+}
+
+let activeReportData = null;
+
+function openReportConfigModal() {
+    const reportClientSelect = document.getElementById('reportClientSelect');
+    if (reportClientSelect) {
+        let optionsHtml = `<option value="all" selected>Todos los clientes</option>`;
+        clients.forEach(c => {
+            const dniStr = c.dni ? ` (DNI: ${c.dni})` : '';
+            optionsHtml += `<option value="${c.id}">${escapeHtml(c.name)}${escapeHtml(dniStr)}</option>`;
+        });
+        reportClientSelect.innerHTML = optionsHtml;
+    }
+
+    const reportPeriodSelect = document.getElementById('reportPeriodSelect');
+    const customDatesRow = document.getElementById('reportCustomDatesRow');
+    if (reportPeriodSelect && customDatesRow) {
+        reportPeriodSelect.value = 'this_month';
+        customDatesRow.style.display = 'none';
+    }
+
+    openModal(document.getElementById('reportConfigModal'));
+}
+
+function renderReportPreview(data) {
+    activeReportData = data;
+    const bodyEl = document.getElementById('reportPreviewBody');
+    if (!bodyEl) return;
+
+    let gestionesRowsHtml = '';
+    if (data.periodGestiones.length === 0) {
+        gestionesRowsHtml = `<tr><td colspan="7" style="text-align:center; padding:1rem; color:var(--text-muted);">Sin registros de gestión en el período seleccionado.</td></tr>`;
+    } else {
+        gestionesRowsHtml = data.periodGestiones.map(({ gestion, client }) => `
+            <tr>
+                <td>${formatDate(gestion.date)}<br><small>${escapeHtml(gestion.time || '')}</small></td>
+                <td><strong>${escapeHtml(client.name)}</strong></td>
+                <td><span class="badge" style="background:#e0f2fe; color:#0369a1;">${escapeHtml(gestion.type)}</span></td>
+                <td>${escapeHtml(gestion.result)}</td>
+                <td>${escapeHtml(gestion.observations || '-')}</td>
+                <td>${escapeHtml(gestion.nextAction || '-')}</td>
+                <td>${gestion.nextFollowUpDate ? formatDate(gestion.nextFollowUpDate) : '-'}</td>
+            </tr>
+        `).join('');
+    }
+
+    let followUpRowsHtml = '';
+    if (data.pendingFollowUpCases.length === 0) {
+        followUpRowsHtml = `<tr><td colspan="6" style="text-align:center; padding:1rem; color:var(--text-muted);">Sin casos en seguimiento pendiente.</td></tr>`;
+    } else {
+        followUpRowsHtml = data.pendingFollowUpCases.map(item => `
+            <tr>
+                <td><strong>${escapeHtml(item.client.name)}</strong></td>
+                <td>${escapeHtml(item.situacion)}</td>
+                <td>${escapeHtml(item.ultimaGestion)}</td>
+                <td>${escapeHtml(item.proximaAccion)}</td>
+                <td>${item.fechaSeguimiento}</td>
+                <td><span class="badge" style="background:${item.estado === 'Vencido' ? '#f8d7da' : '#fff3cd'}; color:${item.estado === 'Vencido' ? '#721c24' : '#856404'};">${item.estado}</span></td>
+            </tr>
+        `).join('');
+    }
+
+    bodyEl.innerHTML = `
+        <div class="report-preview-container">
+            <div class="report-header-card">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <div>
+                        <h1 class="report-brand-title">PALMARES</h1>
+                        <div class="report-subtitle">Informe de Gestión de Cobranza</div>
+                    </div>
+                    <div style="font-size: 0.75rem; text-align: right; opacity: 0.9;">
+                        <div>Generado: ${data.generatedAt}</div>
+                        <div>Cobrador: ${escapeHtml(data.userCobrador)}</div>
+                    </div>
+                </div>
+                <div class="report-header-grid">
+                    <div><strong>Sucursal:</strong> ${escapeHtml(data.branchName)}</div>
+                    <div><strong>Período:</strong> ${formatDate(data.fromDate)} al ${formatDate(data.toDate)}</div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 1: RESUMEN DE GESTIÓN -->
+            <div class="report-section">
+                <h3 class="report-section-title"><i class="fas fa-list-numeric"></i> RESUMEN DE GESTIÓN</h3>
+                <div class="report-metrics-grid">
+                    <div class="report-metric-card"><span class="metric-val">${data.clientesGestionados}</span><span class="metric-label">Clientes gestionados</span></div>
+                    <div class="report-metric-card"><span class="metric-val">${data.gestionesRealizadas}</span><span class="metric-label">Gestiones realizadas</span></div>
+                    <div class="report-metric-card"><span class="metric-val">${data.whatsapp}</span><span class="metric-label">WhatsApp</span></div>
+                    <div class="report-metric-card"><span class="metric-val">${data.llamadas}</span><span class="metric-label">Llamadas</span></div>
+                    <div class="report-metric-card"><span class="metric-val">${data.visitas}</span><span class="metric-label">Visitas</span></div>
+                    <div class="report-metric-card"><span class="metric-val">${data.promesas}</span><span class="metric-label">Promesas de pago</span></div>
+                    <div class="report-metric-card"><span class="metric-val">${data.reprogramaciones}</span><span class="metric-label">Reprogramaciones</span></div>
+                    <div class="report-metric-card"><span class="metric-val">${data.pagosConcretados}</span><span class="metric-label">Pagos concretados</span></div>
+                    <div class="report-metric-card"><span class="metric-val">${data.seguimientosPendientes}</span><span class="metric-label">Seguimientos pendientes</span></div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 2: ESTADO DE CARTERA -->
+            <div class="report-section">
+                <h3 class="report-section-title"><i class="fas fa-chart-pie"></i> ESTADO DE CARTERA</h3>
+                <div class="report-status-pills">
+                    <div class="report-status-pill">🟢 Pagados: <strong>${data.pagados}</strong></div>
+                    <div class="report-status-pill">🟠 Reprogramados: <strong>${data.reprogramados}</strong></div>
+                    <div class="report-status-pill">🔴 Morosos en gestión: <strong>${data.morososEnGestion}</strong></div>
+                    <div class="report-status-pill">🟣 Pendientes por fecha: <strong>${data.pendientesPorFecha}</strong></div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 3: DETALLE DE GESTIONES -->
+            <div class="report-section">
+                <h3 class="report-section-title"><i class="fas fa-table"></i> DETALLE DE GESTIONES (${data.gestionesRealizadas})</h3>
+                <div class="report-table-wrapper">
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha/Hora</th>
+                                <th>Cliente</th>
+                                <th>Tipo / Canal</th>
+                                <th>Resultado</th>
+                                <th>Observación</th>
+                                <th>Próxima acción</th>
+                                <th>Fecha seg.</th>
+                            </tr>
+                        </thead>
+                        <tbody>${gestionesRowsHtml}</tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 4: CASOS EN SEGUIMIENTO -->
+            <div class="report-section">
+                <h3 class="report-section-title"><i class="fas fa-clock"></i> CASOS EN SEGUIMIENTO (${data.pendingFollowUpCases.length})</h3>
+                <div class="report-table-wrapper">
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th>Cliente</th>
+                                <th>Situación</th>
+                                <th>Última gestión</th>
+                                <th>Próxima acción</th>
+                                <th>Fecha seg.</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>${followUpRowsHtml}</tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 5: RESUMEN DE RESULTADOS -->
+            <div class="report-section">
+                <h3 class="report-section-title"><i class="fas fa-check-circle"></i> RESUMEN</h3>
+                <div class="report-summary-box">
+                    Se registraron <strong>${data.gestionesRealizadas}</strong> gestiones sobre <strong>${data.clientesGestionados}</strong> clientes únicos durante el período del ${formatDate(data.fromDate)} al ${formatDate(data.toDate)}.
+                    Se realizaron <strong>${data.visitas}</strong> visitas presenciales, <strong>${data.whatsapp + data.llamadas}</strong> contactos a distancia (WhatsApp/llamadas), obteniendo <strong>${data.promesas}</strong> promesas de pago y <strong>${data.reprogramaciones}</strong> solicitudes de reprogramación.
+                    Se registraron <strong>${data.pagosConcretados}</strong> pagos por un total de <strong>${formatCurrency(data.montoCobrado)}</strong>, quedando <strong>${data.seguimientosPendientes}</strong> casos en seguimiento activo.
+                </div>
+            </div>
+        </div>
+    `;
+
+    closeModalFn(document.getElementById('reportConfigModal'));
+    openModal(document.getElementById('reportPreviewModal'));
+}
+
+async function generateReportPDF(data) {
+    if (!data) return;
+
+    const jsPDFLib = window.jspdf ? window.jspdf.jsPDF : window.jsPDF;
+    if (!jsPDFLib) {
+        showToast('Librería jsPDF no cargada', 'error');
+        return;
+    }
+
+    const doc = new jsPDFLib({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    let y = 14;
+
+    const checkPageBreak = (neededHeight) => {
+        if (y + neededHeight > pageHeight - 18) {
+            doc.addPage();
+            y = 14;
+            addHeaderFooter();
+        }
+    };
+
+    const addHeaderFooter = () => {
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            // Footer
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(140, 140, 140);
+            doc.text(`Informe de Gestión de Cobranza - Palmares Efectivo en el Acto | Página ${i} de ${totalPages}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+        }
+    };
+
+    // --- ENCABEZADO ---
+    doc.setFillColor(2, 132, 199); // sky blue
+    doc.rect(margin, y, pageWidth - (margin * 2), 26, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(255, 255, 255);
+    doc.text('PALMARES', margin + 6, y + 10);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Informe de Gestión de Cobranza', margin + 6, y + 17);
+
+    doc.setFontSize(8.5);
+    doc.text(`Sucursal: ${data.branchName}`, pageWidth - margin - 6, y + 8, { align: 'right' });
+    doc.text(`Cobrador: ${data.userCobrador}`, pageWidth - margin - 6, y + 13, { align: 'right' });
+    doc.text(`Período: ${formatDate(data.fromDate)} al ${formatDate(data.toDate)}`, pageWidth - margin - 6, y + 18, { align: 'right' });
+    doc.text(`Generado: ${data.generatedAt}`, pageWidth - margin - 6, y + 23, { align: 'right' });
+
+    y += 32;
+
+    const drawSectionTitle = (title) => {
+        checkPageBreak(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(2, 132, 199);
+        doc.text(title, margin, y);
+        doc.setDrawColor(2, 132, 199);
+        doc.setLineWidth(0.5);
+        doc.line(margin, y + 2, pageWidth - margin, y + 2);
+        y += 8;
+    };
+
+    // --- SECCIÓN 1: RESUMEN DE GESTIÓN ---
+    drawSectionTitle('RESUMEN DE GESTIÓN');
+
+    const metrics = [
+        ['Clientes gestionados', String(data.clientesGestionados)],
+        ['Gestiones realizadas', String(data.gestionesRealizadas)],
+        ['WhatsApp', String(data.whatsapp)],
+        ['Llamadas', String(data.llamadas)],
+        ['Visitas', String(data.visitas)],
+        ['Promesas de pago', String(data.promesas)],
+        ['Reprogramaciones', String(data.reprogramaciones)],
+        ['Pagos concretados', String(data.pagosConcretados)],
+        ['Seguimientos pendientes', String(data.seguimientosPendientes)]
+    ];
+
+    doc.setFontSize(9);
+    const colW = (pageWidth - (margin * 2)) / 3;
+    let colIdx = 0;
+    let rowY = y;
+
+    metrics.forEach(([label, val]) => {
+        checkPageBreak(8);
+        const currX = margin + (colIdx * colW);
+
+        doc.setFillColor(240, 247, 255);
+        doc.rect(currX, rowY, colW - 3, 7, 'F');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(60, 60, 60);
+        doc.text(label, currX + 3, rowY + 4.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(2, 132, 199);
+        doc.text(val, currX + colW - 6, rowY + 4.5, { align: 'right' });
+
+        colIdx++;
+        if (colIdx >= 3) {
+            colIdx = 0;
+            rowY += 9;
+        }
+    });
+
+    y = rowY + (colIdx > 0 ? 12 : 4);
+
+    // --- SECCIÓN 2: ESTADO DE CARTERA ---
+    drawSectionTitle('ESTADO DE CARTERA');
+
+    const statusList = [
+        ['Pagados', String(data.pagados)],
+        ['Reprogramados', String(data.reprogramados)],
+        ['Morosos en gestión', String(data.morososEnGestion)],
+        ['Pendientes por fecha', String(data.pendientesPorFecha)]
+    ];
+
+    doc.setFontSize(9);
+    colIdx = 0;
+    rowY = y;
+    const statusColW = (pageWidth - (margin * 2)) / 2;
+
+    statusList.forEach(([label, val]) => {
+        checkPageBreak(8);
+        const currX = margin + (colIdx * statusColW);
+
+        doc.setFillColor(248, 249, 250);
+        doc.rect(currX, rowY, statusColW - 4, 7, 'F');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(60, 60, 60);
+        doc.text(label, currX + 3, rowY + 4.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(26, 26, 46);
+        doc.text(val, currX + statusColW - 7, rowY + 4.5, { align: 'right' });
+
+        colIdx++;
+        if (colIdx >= 2) {
+            colIdx = 0;
+            rowY += 9;
+        }
+    });
+
+    y = rowY + (colIdx > 0 ? 12 : 4);
+
+    // --- SECCIÓN 3: DETALLE DE GESTIONES ---
+    drawSectionTitle('DETALLE DE GESTIONES');
+
+    doc.setFontSize(8);
+    const tableCols = [
+        { header: 'Fecha/Hora', width: 26 },
+        { header: 'Cliente', width: 34 },
+        { header: 'Tipo / Canal', width: 28 },
+        { header: 'Resultado', width: 28 },
+        { header: 'Observación', width: 34 },
+        { header: 'Próx. Acción', width: 20 },
+        { header: 'Fecha Seg.', width: 12 }
+    ];
+
+    // Table Header
+    doc.setFillColor(230, 240, 250);
+    doc.rect(margin, y, pageWidth - (margin * 2), 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(2, 132, 199);
+
+    let curX = margin + 2;
+    tableCols.forEach(col => {
+        doc.text(col.header, curX, y + 4.2);
+        curX += col.width;
+    });
+
+    y += 7;
+
+    if (data.periodGestiones.length === 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(120, 120, 120);
+        doc.text('Sin registros de gestión en el período seleccionado.', margin + 2, y + 4);
+        y += 8;
+    } else {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(40, 40, 40);
+
+        data.periodGestiones.forEach(({ gestion, client }) => {
+            checkPageBreak(7);
+
+            curX = margin + 2;
+            const dateStr = `${formatDate(gestion.date)} ${gestion.time || ''}`.trim();
+            const clientStr = (client.name || '').substring(0, 22);
+            const typeStr = (gestion.type || '').substring(0, 18);
+            const resStr = (gestion.result || '').substring(0, 18);
+            const obsStr = (gestion.observations || '-').substring(0, 24);
+            const nextStr = (gestion.nextAction || '-').substring(0, 14);
+            const nextDateStr = gestion.nextFollowUpDate ? formatDate(gestion.nextFollowUpDate) : '-';
+
+            const rowData = [dateStr, clientStr, typeStr, resStr, obsStr, nextStr, nextDateStr];
+
+            rowData.forEach((txt, idx) => {
+                doc.text(String(txt), curX, y + 4);
+                curX += tableCols[idx].width;
+            });
+
+            doc.setDrawColor(240, 240, 240);
+            doc.line(margin, y + 5.5, pageWidth - margin, y + 5.5);
+            y += 6;
+        });
+    }
+
+    y += 4;
+
+    // --- SECCIÓN 4: CASOS EN SEGUIMIENTO ---
+    drawSectionTitle('CASOS EN SEGUIMIENTO');
+
+    const followUpCols = [
+        { header: 'Cliente', width: 38 },
+        { header: 'Situación', width: 34 },
+        { header: 'Última Gestión', width: 34 },
+        { header: 'Próxima Acción', width: 38 },
+        { header: 'Fecha Seg.', width: 22 },
+        { header: 'Estado', width: 16 }
+    ];
+
+    doc.setFillColor(230, 240, 250);
+    doc.rect(margin, y, pageWidth - (margin * 2), 6, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(2, 132, 199);
+
+    curX = margin + 2;
+    followUpCols.forEach(col => {
+        doc.text(col.header, curX, y + 4.2);
+        curX += col.width;
+    });
+
+    y += 7;
+
+    if (data.pendingFollowUpCases.length === 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(120, 120, 120);
+        doc.text('Sin casos en seguimiento pendiente.', margin + 2, y + 4);
+        y += 8;
+    } else {
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(40, 40, 40);
+
+        data.pendingFollowUpCases.forEach(item => {
+            checkPageBreak(7);
+
+            curX = margin + 2;
+            const rowData = [
+                (item.client.name || '').substring(0, 24),
+                (item.situacion || '').substring(0, 22),
+                (item.ultimaGestion || '').substring(0, 22),
+                (item.proximaAccion || '').substring(0, 24),
+                item.fechaSeguimiento || '-',
+                item.estado || 'Pendiente'
+            ];
+
+            rowData.forEach((txt, idx) => {
+                doc.text(String(txt), curX, y + 4);
+                curX += followUpCols[idx].width;
+            });
+
+            doc.setDrawColor(240, 240, 240);
+            doc.line(margin, y + 5.5, pageWidth - margin, y + 5.5);
+            y += 6;
+        });
+    }
+
+    y += 4;
+
+    // --- SECCIÓN 5: RESUMEN DE RESULTADOS ---
+    drawSectionTitle('RESUMEN');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+
+    const summaryText = `Se registraron ${data.gestionesRealizadas} gestiones sobre ${data.clientesGestionados} clientes únicos durante el período del ${formatDate(data.fromDate)} al ${formatDate(data.toDate)}. Se realizaron ${data.visitas} visitas presenciales, ${data.whatsapp + data.llamadas} contactos a distancia (WhatsApp/llamadas), obteniendo ${data.promesas} promesas de pago y ${data.reprogramaciones} solicitudes de reprogramación. Se registraron ${data.pagosConcretados} pagos por un total de ${formatCurrency(data.montoCobrado)}, quedando ${data.seguimientosPendientes} casos en seguimiento activo.`;
+
+    const splitSummary = doc.splitTextToSize(summaryText, pageWidth - (margin * 2) - 6);
+    const boxHeight = (splitSummary.length * 4.5) + 6;
+
+    checkPageBreak(boxHeight + 4);
+
+    doc.setFillColor(248, 249, 250);
+    doc.rect(margin, y, pageWidth - (margin * 2), boxHeight, 'F');
+    doc.text(splitSummary, margin + 3, y + 5);
+
+    addHeaderFooter();
+
+    const fileName = `Informe_Gestion_Cobranza_${data.fromDate}.pdf`;
+    doc.save(fileName);
+    showToast(`PDF generado y descargado: ${fileName}`, 'success');
+}
+
+function exportReportExcel(data) {
+    if (!data) return;
+
+    if (typeof XLSX === 'undefined') {
+        showToast('Librería XLSX no disponible', 'error');
+        return;
+    }
+
+    const headers = [
+        'Fecha', 'Hora', 'Cliente', 'DNI', 'Solicitud',
+        'Tipo de gestión', 'Canal', 'Resultado', 'Estado',
+        'Observación', 'Próxima acción', 'Fecha de seguimiento',
+        'Fecha prometida', 'Importe prometido', 'Importe cobrado', 'Usuario/cobrador'
+    ];
+
+    const rows = [headers];
+
+    if (data.periodGestiones.length > 0) {
+        data.periodGestiones.forEach(({ gestion, client }) => {
+            let promise = null;
+            if (gestion.promiseId && Array.isArray(client.promises)) {
+                promise = client.promises.find(pr => pr.id === gestion.promiseId) || null;
+            }
+
+            let pagoAssoc = null;
+            if (Array.isArray(client.payments)) {
+                pagoAssoc = client.payments.find(p => p.date === gestion.date) || null;
+            }
+
+            rows.push([
+                gestion.date || '',
+                gestion.time || '',
+                client.name || '',
+                client.dni || '',
+                client.requestNumber || '',
+                gestion.type || '',
+                gestion.type || '',
+                gestion.result || '',
+                client.paymentStatus || '',
+                gestion.observations || '',
+                gestion.nextAction || '',
+                gestion.nextFollowUpDate || '',
+                promise ? promise.promisedDate : '',
+                promise ? (promise.promisedAmount || 0) : 0,
+                pagoAssoc ? (pagoAssoc.amount || 0) : 0,
+                data.userCobrador || 'Cobrador'
+            ]);
+        });
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Gestiones');
+
+    const fileName = `Informe_Gestion_Cobranza_${data.fromDate}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    showToast(`Excel exportado correctamente: ${fileName}`, 'success');
+}
+
+async function shareReport(data) {
+    if (!data) return;
+
+    const title = `Informe de Gestión de Cobranza - ${formatDate(data.fromDate)} al ${formatDate(data.toDate)}`;
+    const text = `PALMARES - Informe de Gestión de Cobranza\nCobrador: ${data.userCobrador}\nClientes gestionados: ${data.clientesGestionados}\nGestiones realizadas: ${data.gestionesRealizadas}\nPagos concretados: ${data.pagosConcretados} (${formatCurrency(data.montoCobrado)})\nSeguimientos pendientes: ${data.seguimientosPendientes}`;
+
+    if (navigator.share) {
+        try {
+            await navigator.share({ title, text });
+            showToast('Informe compartido correctamente', 'success');
+        } catch (e) {
+            if (e.name !== 'AbortError') {
+                fallbackCopyText(text);
+            }
+        }
+    } else {
+        fallbackCopyText(text);
+    }
+}
+
+// ========================================
 // PANEL DE GESTIONES DEL COBRADOR
 // ========================================
 
@@ -4705,7 +5495,7 @@ function setupEventListeners() {
         }
     });
 
-    // Gestions History Modal Event Listeners
+    // Gestions History Modal & Report Module Event Listeners
     setupGestionsViewTabs();
     const gestionsNavBtn = document.getElementById('gestionsNavBtn');
     if (gestionsNavBtn) gestionsNavBtn.addEventListener('click', openGestionsHistoryModal);
@@ -4715,6 +5505,59 @@ function setupEventListeners() {
 
     const closeGestionsHistoryBtn = document.getElementById('closeGestionsHistoryBtn');
     if (closeGestionsHistoryBtn) closeGestionsHistoryBtn.addEventListener('click', () => closeModalFn(document.getElementById('gestionsHistoryModal')));
+
+    const openReportConfigBtn = document.getElementById('openReportConfigBtn');
+    if (openReportConfigBtn) openReportConfigBtn.addEventListener('click', openReportConfigModal);
+
+    const closeReportConfigModal = document.getElementById('closeReportConfigModal');
+    if (closeReportConfigModal) closeReportConfigModal.addEventListener('click', () => closeModalFn(document.getElementById('reportConfigModal')));
+
+    const cancelReportConfigBtn = document.getElementById('cancelReportConfigBtn');
+    if (cancelReportConfigBtn) cancelReportConfigBtn.addEventListener('click', () => closeModalFn(document.getElementById('reportConfigModal')));
+
+    const reportPeriodSelect = document.getElementById('reportPeriodSelect');
+    const reportCustomDatesRow = document.getElementById('reportCustomDatesRow');
+    if (reportPeriodSelect && reportCustomDatesRow) {
+        reportPeriodSelect.addEventListener('change', (e) => {
+            reportCustomDatesRow.style.display = (e.target.value === 'custom') ? 'flex' : 'none';
+        });
+    }
+
+    const reportConfigForm = document.getElementById('reportConfigForm');
+    if (reportConfigForm) {
+        reportConfigForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const periodPreset = document.getElementById('reportPeriodSelect')?.value || 'this_month';
+            const customFrom = document.getElementById('reportDateFrom')?.value || '';
+            const customTo = document.getElementById('reportDateTo')?.value || '';
+            const clientIdScope = document.getElementById('reportClientSelect')?.value || 'all';
+
+            const reportData = calculateReportData({
+                periodPreset,
+                customFrom,
+                customTo,
+                clientIdScope,
+                userCobrador: 'Cobrador'
+            });
+
+            renderReportPreview(reportData);
+        });
+    }
+
+    const closeReportPreviewModal = document.getElementById('closeReportPreviewModal');
+    if (closeReportPreviewModal) closeReportPreviewModal.addEventListener('click', () => closeModalFn(document.getElementById('reportPreviewModal')));
+
+    const closeReportPreviewBtn = document.getElementById('closeReportPreviewBtn');
+    if (closeReportPreviewBtn) closeReportPreviewBtn.addEventListener('click', () => closeModalFn(document.getElementById('reportPreviewModal')));
+
+    const downloadReportPdfBtn = document.getElementById('downloadReportPdfBtn');
+    if (downloadReportPdfBtn) downloadReportPdfBtn.addEventListener('click', () => generateReportPDF(activeReportData));
+
+    const exportReportExcelBtn = document.getElementById('exportReportExcelBtn');
+    if (exportReportExcelBtn) exportReportExcelBtn.addEventListener('click', () => exportReportExcel(activeReportData));
+
+    const shareReportBtn = document.getElementById('shareReportBtn');
+    if (shareReportBtn) shareReportBtn.addEventListener('click', () => shareReport(activeReportData));
 
     const gestionsFilterToggleBtn = document.getElementById('gestionsFilterToggleBtn');
     const gestionsFilterPanel = document.getElementById('gestionsFilterPanel');

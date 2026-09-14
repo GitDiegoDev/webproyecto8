@@ -1183,3 +1183,105 @@ runTest('22. Notifications Badge & FollowUpDueCount Test', () => {
 
     document.getElementById = originalGetElementById;
 });
+
+// [TEST 27] Collection Management Report Calculations & Date Ranges Test
+runTest('27. Collection Management Report Calculations & Date Ranges Test', () => {
+    const todayStr = getToday();
+
+    // 1. Test Date Range Presets
+    const todayRange = getReportDateRange('today');
+    assert.strictEqual(todayRange.fromDate, todayStr);
+    assert.strictEqual(todayRange.toDate, todayStr);
+
+    const customRange = getReportDateRange('custom', '2026-09-01', '2026-09-15');
+    assert.strictEqual(customRange.fromDate, '2026-09-01');
+    assert.strictEqual(customRange.toDate, '2026-09-15');
+
+    // 2. Test Report Data Calculation
+    clients = [
+        {
+            id: 'c_report_1',
+            name: 'Juan Repórtez',
+            dni: '30.123.456',
+            branchNumber: '01',
+            paymentStatus: 'pending',
+            gestiones: [
+                {
+                    id: 'g_rep_1',
+                    date: todayStr,
+                    time: '09:30',
+                    type: 'WhatsApp / mensaje',
+                    result: 'Prometió pagar',
+                    observations: 'Acuerda pago',
+                    nextAction: 'Verificar depósito',
+                    nextFollowUpDate: todayStr,
+                    promiseId: 'pr_rep_1'
+                },
+                {
+                    id: 'g_rep_2',
+                    date: todayStr,
+                    time: '11:00',
+                    type: 'Visita del cobrador',
+                    result: 'Solicita reprogramación',
+                    observations: 'Solicita reprogramar',
+                    nextAction: 'Volver a visitar',
+                    nextFollowUpDate: todayStr
+                }
+            ],
+            promises: [
+                {
+                    id: 'pr_rep_1',
+                    promisedDate: todayStr,
+                    promisedAmount: 25000,
+                    status: 'pendiente'
+                }
+            ],
+            payments: [
+                {
+                    id: 'p_rep_1',
+                    date: todayStr,
+                    amount: 25000,
+                    receiptNumber: '00000999'
+                }
+            ]
+        },
+        {
+            id: 'c_report_2',
+            name: 'María SinGestión',
+            dni: '40.987.654',
+            branchNumber: '01',
+            paymentStatus: 'paid',
+            gestiones: [],
+            promises: [],
+            payments: []
+        }
+    ];
+
+    const reportData = calculateReportData({
+        periodPreset: 'today',
+        userCobrador: 'Juan Cobrador'
+    });
+
+    assert.strictEqual(reportData.clientesGestionados, 1, '1 unique client managed today');
+    assert.strictEqual(reportData.gestionesRealizadas, 2, '2 gestiones recorded today');
+    assert.strictEqual(reportData.whatsapp, 1, '1 WhatsApp gestion');
+    assert.strictEqual(reportData.visitas, 1, '1 Visita gestion');
+    assert.strictEqual(reportData.promesas, 1, '1 Promesa de pago');
+    assert.strictEqual(reportData.reprogramaciones, 1, '1 Reprogramación');
+    assert.strictEqual(reportData.pagosConcretados, 1, '1 Pago concretado');
+    assert.strictEqual(reportData.montoCobrado, 25000, 'Total cobrado $25.000');
+    assert.strictEqual(reportData.periodGestiones.length, 2, 'Detailed gestiones count is 2');
+
+    // 3. Test Empty Period Handling
+    const emptyReport = calculateReportData({
+        periodPreset: 'custom',
+        customFrom: '1999-01-01',
+        customTo: '1999-01-02'
+    });
+
+    assert.strictEqual(emptyReport.clientesGestionados, 0, '0 clients in empty period');
+    assert.strictEqual(emptyReport.gestionesRealizadas, 0, '0 gestiones in empty period');
+    assert.strictEqual(emptyReport.pagosConcretados, 0, '0 pagos in empty period');
+    assert.strictEqual(emptyReport.montoCobrado, 0, '0 monto cobrado in empty period');
+    assert.strictEqual(emptyReport.periodGestiones.length, 0, 'Empty gestiones list');
+});
