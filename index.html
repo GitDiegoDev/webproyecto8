@@ -23,6 +23,10 @@
                     <h1>Palmares</h1>
                     <span class="tagline">Efectivo en el Acto</span>
                 </div>
+                <button type="button" id="logoutBtn" class="btn-secondary btn-sm" style="display: none; margin-left: auto; margin-right: 0.5rem; gap: 0.35rem; padding: 0.4rem 0.6rem; font-size: 0.8rem;" title="Cerrar Sesión">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Cerrar sesión</span>
+                </button>
                 <button type="button" id="notificationsBtn" class="notifications-btn" aria-label="Notificaciones" title="Notificaciones">
                     <i class="fas fa-bell"></i>
                     <span id="notificationsBadge" class="notifications-badge" style="display: none;">0</span>
@@ -1294,6 +1298,36 @@
     <!-- Toast Notifications -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
+    <!-- Modal Login Supabase -->
+    <div class="modal open" id="loginModal" style="z-index: 9999;">
+        <div class="modal-overlay" style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(4px);"></div>
+        <div class="modal-content modal-small" style="text-align: center;">
+            <div class="modal-header" style="justify-content: center; border-bottom: none; padding-bottom: 0;">
+                <div class="logo" style="width: 50px; height: 50px; background: #0284c7; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; margin-bottom: 0.5rem;">
+                    <i class="fas fa-hand-holding-dollar"></i>
+                </div>
+            </div>
+            <h2 style="margin-bottom: 0.25rem; font-size: 1.35rem; color: #0f172a;">Palmares</h2>
+            <p style="margin-bottom: 1.25rem; font-size: 0.875rem; color: #64748b;">Efectivo en el Acto — Iniciar Sesión</p>
+
+            <form id="loginForm">
+                <div class="form-group" style="text-align: left;">
+                    <label for="loginEmail">Correo electrónico *</label>
+                    <input type="email" id="loginEmail" required placeholder="ejemplo@palmares.com" autocomplete="email">
+                </div>
+                <div class="form-group" style="text-align: left;">
+                    <label for="loginPassword">Contraseña *</label>
+                    <input type="password" id="loginPassword" required placeholder="••••••••" autocomplete="current-password">
+                </div>
+                <div id="loginError" style="display: none; color: #dc2626; font-size: 0.85rem; margin-bottom: 1rem; text-align: left; background: #fef2f2; padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid #fecaca;"></div>
+                <button type="submit" class="btn-primary" id="loginSubmitBtn" style="width: 100%; justify-content: center; padding: 0.75rem;">
+                    <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
     <script src="xlsx.full.min.js"></script>
     <script src="jspdf.umd.min.js"></script>
     <script src="app.js"></script>
