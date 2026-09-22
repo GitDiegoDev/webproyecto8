@@ -13,6 +13,13 @@ const DB_NAME = 'PalmaresDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'clients';
 
+const SUPABASE_URL = 'https://mtivjliueszezvkxnxxb.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10aXZqbGl1ZXN6ZXp2a3hueHhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NjEwMDMsImV4cCI6MjEwNTMzNzAwM30.jTAQTwGqSPK_TXqLQ97LjfUpQS49g6RVPdpklWkW0Tw';
+
+const supabase = (typeof window !== 'undefined' && window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
+
 const TYPE_CONFIG = {
     jubilado: { label: 'Jubilado', icon: 'fa-user-clock', color: '#6b4c9a', badgeClass: 'badge-jubilado' },
     docente: { label: 'Docente', icon: 'fa-chalkboard-user', color: '#ec4899', badgeClass: 'badge-docente' },
@@ -41,8 +48,127 @@ let isFormDirty = false;
 let displayLimit = 20; // Pagination limit
 
 // ========================================
-// INDEXEDDB & STORAGE PERSISTENCE
+// SUPABASE MAPPING & STORAGE PERSISTENCE
 // ========================================
+
+function mapDbToClient(row) {
+    if (!row) return null;
+    const client = {
+        id: row.id,
+        name: row.name || '',
+        branchNumber: row.branch_number || '',
+        requestNumber: row.request_number || '',
+        installmentNumber: row.installment_number !== undefined && row.installment_number !== null ? Number(row.installment_number) : 1,
+        totalInstallments: row.total_installments !== undefined && row.total_installments !== null ? Number(row.total_installments) : 12,
+        periodMonth: row.period_month || getToday().substring(0, 7),
+        penaltyRate: row.penalty_rate !== undefined && row.penalty_rate !== null ? Number(row.penalty_rate) : 0.32,
+        dni: row.dni || '',
+        type: row.type || '',
+        salaryDay: row.salary_day !== undefined && row.salary_day !== null ? Number(row.salary_day) : 10,
+        paymentDay: row.payment_day !== undefined && row.payment_day !== null ? Number(row.payment_day) : 10,
+        installmentAmount: row.installment_amount !== undefined && row.installment_amount !== null ? Number(row.installment_amount) : 0,
+        loanAmount: row.loan_amount !== undefined && row.loan_amount !== null ? Number(row.loan_amount) : 0,
+        phone: row.phone || '',
+        email: row.email || '',
+        domicilio: row.domicilio || '',
+        cpos: row.cpos || '',
+        localidad: row.localidad || '',
+        zona: row.zona || '',
+        notes: row.notes || '',
+        paymentStatus: row.payment_status || 'pending',
+        isOverdue: row.is_overdue || false,
+        daysOverdue: row.days_overdue !== undefined && row.days_overdue !== null ? Number(row.days_overdue) : 0,
+        lastPaymentDate: row.last_payment_date || '',
+        garante: row.garante || '',
+        apellido: row.apellido || '',
+        apenom: row.apenom || '',
+        celular: row.celular || row.phone || '',
+        gestiones: Array.isArray(row.gestiones) ? row.gestiones : [],
+        promises: Array.isArray(row.promises) ? row.promises : [],
+        payments: Array.isArray(row.payments) ? row.payments : []
+    };
+    sanitizeClientSchema(client);
+    return client;
+}
+
+function mapClientToDb(client) {
+    if (!client) return null;
+    return {
+        id: client.id,
+        name: client.name || '',
+        branch_number: client.branchNumber || '',
+        request_number: client.requestNumber || '',
+        installment_number: client.installmentNumber !== undefined ? Number(client.installmentNumber) : 1,
+        total_installments: client.totalInstallments !== undefined ? Number(client.totalInstallments) : 12,
+        period_month: client.periodMonth || getToday().substring(0, 7),
+        penalty_rate: client.penaltyRate !== undefined ? Number(client.penaltyRate) : 0.32,
+        dni: client.dni || '',
+        type: client.type || '',
+        salary_day: client.salaryDay !== undefined ? Number(client.salaryDay) : 10,
+        payment_day: client.paymentDay !== undefined ? Number(client.paymentDay) : 10,
+        installment_amount: client.installmentAmount !== undefined ? Number(client.installmentAmount) : 0,
+        loan_amount: client.loanAmount !== undefined ? Number(client.loanAmount) : 0,
+        phone: client.phone || '',
+        email: client.email || '',
+        domicilio: client.domicilio || '',
+        cpos: client.cpos || '',
+        localidad: client.localidad || '',
+        zona: client.zona || '',
+        notes: client.notes || '',
+        payment_status: client.paymentStatus || 'pending',
+        is_overdue: !!client.isOverdue,
+        days_overdue: client.daysOverdue !== undefined ? Number(client.daysOverdue) : 0,
+        last_payment_date: client.lastPaymentDate || '',
+        garante: client.garante || '',
+        apellido: client.apellido || '',
+        apenom: client.apenom || '',
+        celular: client.celular || client.phone || '',
+        gestiones: Array.isArray(client.gestiones) ? client.gestiones : [],
+        promises: Array.isArray(client.promises) ? client.promises : [],
+        payments: Array.isArray(client.payments) ? client.payments : []
+    };
+}
+
+async function insertClientInSupabase(client) {
+    if (!supabase) return;
+    try {
+        const payload = mapClientToDb(client);
+        const { error } = await supabase.from('clients').insert(payload);
+        if (error) {
+            console.error('Error inserting client in Supabase:', error);
+            showToast('Error al guardar cliente en Supabase', 'error');
+        }
+    } catch (e) {
+        console.error('Exception inserting client in Supabase:', e);
+    }
+}
+
+async function updateClientInSupabase(client) {
+    if (!supabase) return;
+    try {
+        const payload = mapClientToDb(client);
+        const { error } = await supabase.from('clients').update(payload).eq('id', client.id);
+        if (error) {
+            console.error('Error updating client in Supabase:', error);
+            showToast('Error al actualizar cliente en Supabase', 'error');
+        }
+    } catch (e) {
+        console.error('Exception updating client in Supabase:', e);
+    }
+}
+
+async function deleteClientFromSupabase(id) {
+    if (!supabase) return;
+    try {
+        const { error } = await supabase.from('clients').delete().eq('id', id);
+        if (error) {
+            console.error('Error deleting client from Supabase:', error);
+            showToast('Error al eliminar cliente de Supabase', 'error');
+        }
+    } catch (e) {
+        console.error('Exception deleting client from Supabase:', e);
+    }
+}
 
 function openDB() {
     return new Promise((resolve, reject) => {
@@ -69,46 +195,62 @@ function openDB() {
 async function loadClients() {
     let loaded = false;
 
-    // 1. Try IndexedDB
-    try {
-        const db = await openDB();
-        if (db) {
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const store = tx.objectStore(STORE_NAME);
-            const req = store.getAll();
-            loaded = await new Promise((resolve) => {
-                req.onsuccess = () => {
-                    if (req.result && req.result.length > 0) {
-                        clients = req.result;
-                        resolve(true);
-                    } else {
-                        resolve(false);
-                    }
-                };
-                req.onerror = () => resolve(false);
-            });
-        }
-    } catch (e) {
-        console.warn('IndexedDB load failed:', e);
-    }
-
-    // 2. Fallback to localStorage if IndexedDB had no data or failed
-    if (!loaded) {
+    // 1. Try Supabase
+    if (supabase) {
         try {
-            const data = localStorage.getItem(STORAGE_KEY);
-            if (data) {
-                clients = JSON.parse(data);
+            const { data, error } = await supabase.from('clients').select('*');
+            if (error) {
+                console.error('Error loading clients from Supabase:', error);
+            } else if (data) {
+                clients = data.map(mapDbToClient);
                 loaded = true;
             }
         } catch (e) {
-            console.warn('localStorage load failed:', e);
+            console.warn('Supabase load failed:', e);
         }
     }
 
-    // 3. Fallback to Demo Data if no data in storage
-    if (!loaded || clients.length === 0) {
-        clients = getDemoData();
-        saveClients();
+    // 2. Fallback IndexedDB / localStorage / Demo Data if Supabase not used or empty
+    if (!loaded) {
+        /* Preserved IndexedDB & LocalStorage fallback code for backward compatibility */
+        try {
+            const db = await openDB();
+            if (db) {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                const req = store.getAll();
+                loaded = await new Promise((resolve) => {
+                    req.onsuccess = () => {
+                        if (req.result && req.result.length > 0) {
+                            clients = req.result;
+                            resolve(true);
+                        } else {
+                            resolve(false);
+                        }
+                    };
+                    req.onerror = () => resolve(false);
+                });
+            }
+        } catch (e) {
+            console.warn('IndexedDB load failed:', e);
+        }
+
+        if (!loaded) {
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                if (data) {
+                    clients = JSON.parse(data);
+                    loaded = true;
+                }
+            } catch (e) {
+                console.warn('localStorage load failed:', e);
+            }
+        }
+
+        if (!loaded || clients.length === 0) {
+            clients = getDemoData();
+            saveClients();
+        }
     }
 
     // Ensure schema migration for existing records and remove duplicates
@@ -1787,11 +1929,13 @@ function mergeMonthlyPortfolio(importedList) {
             // CRITICAL: RETAIN INTERNAL GESTION DATA INTACT
             sanitizeClientSchema(existing);
             updatedCount++;
+            updateClientInSupabase(existing);
         } else {
             // New client entry in monthly portfolio
             if (!importedItem.id) importedItem.id = generateId();
             clients.push(importedItem);
             addedCount++;
+            insertClientInSupabase(importedItem);
         }
     });
 
@@ -2407,6 +2551,7 @@ function handleSaveGestion(e) {
     client.gestiones.push(newGestion);
 
     updateOverdueStatuses();
+    updateClientInSupabase(client);
     saveClients();
     renderClients();
 
@@ -2736,6 +2881,7 @@ function updatePromiseStatus(clientId, promiseId, newStatus) {
 
     promise.status = newStatus;
     updateOverdueStatuses();
+    updateClientInSupabase(client);
     saveClients();
     renderClients();
 
@@ -2781,6 +2927,7 @@ function handleSavePromise(e) {
     client.promises.push(newPromise);
 
     updateOverdueStatuses();
+    updateClientInSupabase(client);
     saveClients();
     renderClients();
 
@@ -4734,11 +4881,14 @@ function handleStartExport(e) {
 
     // Mark exported status
     const exportTime = new Date().toISOString();
-    matches.forEach(({ payment }) => {
+    const affectedClients = new Set();
+    matches.forEach(({ client, payment }) => {
         payment.exported = true;
         payment.exportedAt = exportTime;
+        if (client) affectedClients.add(client);
     });
 
+    affectedClients.forEach(c => updateClientInSupabase(c));
     saveClients();
     renderClients();
 
@@ -4841,6 +4991,7 @@ function handleSaveClient(e) {
         const idx = clients.findIndex(c => c.id === editingId);
         if (idx !== -1) {
             clients[idx] = { ...clients[idx], ...clientData };
+            updateClientInSupabase(clients[idx]);
             showToast('Cliente actualizado correctamente', 'success');
         }
     } else {
@@ -4854,6 +5005,7 @@ function handleSaveClient(e) {
             payments: []
         };
         clients.push(newClient);
+        insertClientInSupabase(newClient);
         showToast('Cliente agregado correctamente', 'success');
     }
 
@@ -4871,7 +5023,9 @@ function confirmDelete(id) {
 
 function handleDelete() {
     if (!deletingId) return;
-    clients = clients.filter(c => c.id !== deletingId);
+    const targetId = deletingId;
+    clients = clients.filter(c => c.id !== targetId);
+    deleteClientFromSupabase(targetId);
     saveClients();
     renderClients();
     showToast('Cliente eliminado', 'info');
@@ -5271,6 +5425,7 @@ function handleSavePayment(e) {
     client.lastPaymentDate = paymentDate;
 
     updateOverdueStatuses();
+    updateClientInSupabase(client);
     saveClients();
     renderClients();
 
@@ -5921,15 +6076,200 @@ function fallbackCopyText(text) {
 }
 
 // ========================================
-// INIT
+// AUTHENTICATION & SUPABASE INITIALIZATION
 // ========================================
 
-async function init() {
+async function initAuth() {
+    setupAuthEventListeners();
+
+    if (!supabase) {
+        console.warn('Supabase JS SDK unavailable. Running in offline/standalone mode.');
+        hideLoginModal();
+        await loadClients();
+        setupFilters();
+        setupEventListeners();
+        renderClients();
+        registerServiceWorker();
+        return;
+    }
+
+    try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+            console.error('Error fetching Supabase session:', error);
+        }
+
+        if (session) {
+            hideLoginModal();
+            await onAuthenticated();
+        } else {
+            showLoginModal();
+        }
+
+        supabase.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                hideLoginModal();
+                await onAuthenticated();
+            } else if (event === 'SIGNED_OUT') {
+                showLoginModal();
+            }
+        });
+    } catch (e) {
+        console.error('Unexpected error in initAuth:', e);
+        showLoginModal();
+    }
+}
+
+async function onAuthenticated() {
     await loadClients();
     setupFilters();
     setupEventListeners();
     renderClients();
+    setupRealtimeSync();
     registerServiceWorker();
+}
+
+function showLoginModal() {
+    const modal = document.getElementById('loginModal');
+    if (modal) modal.classList.add('open');
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.style.display = 'none';
+}
+
+function hideLoginModal() {
+    const modal = document.getElementById('loginModal');
+    if (modal) modal.classList.remove('open');
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+}
+
+function setupAuthEventListeners() {
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm && !loginForm._authBound) {
+        loginForm._authBound = true;
+        loginForm.addEventListener('submit', handleLoginSubmit);
+    }
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn && !logoutBtn._authBound) {
+        logoutBtn._authBound = true;
+        logoutBtn.addEventListener('click', handleLogoutClick);
+    }
+}
+
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const emailEl = document.getElementById('loginEmail');
+    const passEl = document.getElementById('loginPassword');
+    const errEl = document.getElementById('loginError');
+    const submitBtn = document.getElementById('loginSubmitBtn');
+
+    if (!emailEl || !passEl) return;
+
+    const email = emailEl.value.trim();
+    const password = passEl.value;
+
+    if (errEl) {
+        errEl.style.display = 'none';
+        errEl.textContent = '';
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ingresando...';
+    }
+
+    if (!supabase) {
+        if (errEl) {
+            errEl.textContent = 'Error: Cliente Supabase no inicializado.';
+            errEl.style.display = 'block';
+        }
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Iniciar Sesión';
+        }
+        return;
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Iniciar Sesión';
+    }
+
+    if (error) {
+        if (errEl) {
+            errEl.textContent = error.message === 'Invalid login credentials'
+                ? 'Correo o contraseña incorrectos.'
+                : error.message;
+            errEl.style.display = 'block';
+        }
+    } else {
+        hideLoginModal();
+        await onAuthenticated();
+    }
+}
+
+async function handleLogoutClick() {
+    if (supabase) {
+        await supabase.auth.signOut();
+    }
+    showLoginModal();
+    showToast('Sesión cerrada correctamente', 'info');
+}
+
+let realtimeChannel = null;
+
+function setupRealtimeSync() {
+    if (!supabase) return;
+
+    if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel);
+        realtimeChannel = null;
+    }
+
+    realtimeChannel = supabase
+        .channel('clients-changes')
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'clients' },
+            (payload) => {
+                const { eventType, new: newRecord, old: oldRecord } = payload;
+
+                if (eventType === 'INSERT' && newRecord) {
+                    const client = mapDbToClient(newRecord);
+                    const idx = clients.findIndex(c => c.id === client.id);
+                    if (idx === -1) {
+                        clients.push(client);
+                    } else {
+                        clients[idx] = client;
+                    }
+                } else if (eventType === 'UPDATE' && newRecord) {
+                    const client = mapDbToClient(newRecord);
+                    const idx = clients.findIndex(c => c.id === client.id);
+                    if (idx !== -1) {
+                        clients[idx] = client;
+                    } else {
+                        clients.push(client);
+                    }
+                } else if (eventType === 'DELETE' && oldRecord) {
+                    clients = clients.filter(c => c.id !== oldRecord.id);
+                }
+
+                updateOverdueStatuses();
+                renderClients();
+            }
+        )
+        .subscribe();
+}
+
+// ========================================
+// INIT
+// ========================================
+
+async function init() {
+    await initAuth();
 }
 
 document.addEventListener('DOMContentLoaded', init);
