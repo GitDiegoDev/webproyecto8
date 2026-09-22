@@ -16,7 +16,7 @@ const STORE_NAME = 'clients';
 const SUPABASE_URL = 'https://mtivjliueszezvkxnxxb.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10aXZqbGl1ZXN6ZXp2a3hueHhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NjEwMDMsImV4cCI6MjEwNTMzNzAwM30.jTAQTwGqSPK_TXqLQ97LjfUpQS49g6RVPdpklWkW0Tw';
 
-const supabase = (typeof window !== 'undefined' && window.supabase && window.supabase.createClient)
+const supabaseClient = (typeof window !== 'undefined' && window.supabase && window.supabase.createClient)
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
@@ -130,10 +130,10 @@ function mapClientToDb(client) {
 }
 
 async function insertClientInSupabase(client) {
-    if (!supabase) return;
+    if (!supabaseClient) return;
     try {
         const payload = mapClientToDb(client);
-        const { error } = await supabase.from('clients').insert(payload);
+        const { error } = await supabaseClient.from('clients').insert(payload);
         if (error) {
             console.error('Error inserting client in Supabase:', error);
             showToast('Error al guardar cliente en Supabase', 'error');
@@ -144,10 +144,10 @@ async function insertClientInSupabase(client) {
 }
 
 async function updateClientInSupabase(client) {
-    if (!supabase) return;
+    if (!supabaseClient) return;
     try {
         const payload = mapClientToDb(client);
-        const { error } = await supabase.from('clients').update(payload).eq('id', client.id);
+        const { error } = await supabaseClient.from('clients').update(payload).eq('id', client.id);
         if (error) {
             console.error('Error updating client in Supabase:', error);
             showToast('Error al actualizar cliente en Supabase', 'error');
@@ -158,9 +158,9 @@ async function updateClientInSupabase(client) {
 }
 
 async function deleteClientFromSupabase(id) {
-    if (!supabase) return;
+    if (!supabaseClient) return;
     try {
-        const { error } = await supabase.from('clients').delete().eq('id', id);
+        const { error } = await supabaseClient.from('clients').delete().eq('id', id);
         if (error) {
             console.error('Error deleting client from Supabase:', error);
             showToast('Error al eliminar cliente de Supabase', 'error');
@@ -196,9 +196,9 @@ async function loadClients() {
     let loaded = false;
 
     // 1. Try Supabase
-    if (supabase) {
+    if (supabaseClient) {
         try {
-            const { data, error } = await supabase.from('clients').select('*');
+            const { data, error } = await supabaseClient.from('clients').select('*');
             if (error) {
                 console.error('Error loading clients from Supabase:', error);
             } else if (data) {
@@ -6082,7 +6082,7 @@ function fallbackCopyText(text) {
 async function initAuth() {
     setupAuthEventListeners();
 
-    if (!supabase) {
+    if (!supabaseClient) {
         console.warn('Supabase JS SDK unavailable. Running in offline/standalone mode.');
         hideLoginModal();
         await loadClients();
@@ -6094,7 +6094,7 @@ async function initAuth() {
     }
 
     try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
         if (error) {
             console.error('Error fetching Supabase session:', error);
         }
@@ -6106,7 +6106,7 @@ async function initAuth() {
             showLoginModal();
         }
 
-        supabase.auth.onAuthStateChange(async (event, session) => {
+        supabaseClient.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_IN' && session) {
                 hideLoginModal();
                 await onAuthenticated();
@@ -6179,7 +6179,7 @@ async function handleLoginSubmit(e) {
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ingresando...';
     }
 
-    if (!supabase) {
+    if (!supabaseClient) {
         if (errEl) {
             errEl.textContent = 'Error: Cliente Supabase no inicializado.';
             errEl.style.display = 'block';
@@ -6191,7 +6191,7 @@ async function handleLoginSubmit(e) {
         return;
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
 
     if (submitBtn) {
         submitBtn.disabled = false;
@@ -6212,8 +6212,8 @@ async function handleLoginSubmit(e) {
 }
 
 async function handleLogoutClick() {
-    if (supabase) {
-        await supabase.auth.signOut();
+    if (supabaseClient) {
+        await supabaseClient.auth.signOut();
     }
     showLoginModal();
     showToast('Sesión cerrada correctamente', 'info');
@@ -6222,14 +6222,14 @@ async function handleLogoutClick() {
 let realtimeChannel = null;
 
 function setupRealtimeSync() {
-    if (!supabase) return;
+    if (!supabaseClient) return;
 
     if (realtimeChannel) {
-        supabase.removeChannel(realtimeChannel);
+        supabaseClient.removeChannel(realtimeChannel);
         realtimeChannel = null;
     }
 
-    realtimeChannel = supabase
+    realtimeChannel = supabaseClient
         .channel('clients-changes')
         .on(
             'postgres_changes',
