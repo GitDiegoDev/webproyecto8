@@ -16,7 +16,7 @@ const STORE_NAME = 'clients';
 const SUPABASE_URL = 'https://mtivjliueszezvkxnxxb.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10aXZqbGl1ZXN6ZXp2a3hueHhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NjEwMDMsImV4cCI6MjEwNTMzNzAwM30.jTAQTwGqSPK_TXqLQ97LjfUpQS49g6RVPdpklWkW0Tw';
 
-const supabaseClient = (typeof window !== 'undefined' && window.supabase && window.supabase.createClient)
+let supabaseClient = (typeof window !== 'undefined' && window.supabase && window.supabase.createClient)
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
@@ -51,23 +51,91 @@ let displayLimit = 20; // Pagination limit
 // SUPABASE MAPPING & STORAGE PERSISTENCE
 // ========================================
 
+function mapDbToPayment(row) {
+    if (!row) return null;
+    return {
+        id: row.id,
+        receiptNumber: row.receipt_number || row.receiptNumber || '',
+        clientId: row.client_id || row.clientId || '',
+        clientName: row.client_name || row.clientName || '',
+        dni: row.dni || '',
+        branchNumber: row.branch_number || row.branchNumber || '',
+        requestNumber: row.request_number || row.requestNumber || '',
+        date: row.date || '',
+        time: row.time || '',
+        periodMonth: row.period_month || row.periodMonth || '',
+        installmentNumber: (row.installment_number !== undefined && row.installment_number !== null) ? String(row.installment_number) : (row.installmentNumber !== undefined ? String(row.installmentNumber) : ''),
+        installmentAmount: row.installment_amount !== undefined && row.installment_amount !== null ? Number(row.installment_amount) : (row.installmentAmount || 0),
+        punitorios: row.punitorios !== undefined && row.punitorios !== null ? Number(row.punitorios) : 0,
+        punitoriosWaived: row.punitorios_waived !== undefined && row.punitorios_waived !== null ? Number(row.punitorios_waived) : (row.punitoriosWaived || 0),
+        amount: row.amount !== undefined && row.amount !== null ? Number(row.amount) : 0,
+        amountGiven: row.amount_given !== undefined && row.amount_given !== null ? Number(row.amount_given) : (row.amountGiven || 0),
+        paymentMethod: row.payment_method || row.paymentMethod || 'Efectivo',
+        paymentType: row.payment_type || row.paymentType || 'total',
+        daysOverdue: row.days_overdue !== undefined && row.days_overdue !== null ? Number(row.days_overdue) : (row.daysOverdue || 0),
+        notes: row.notes || '',
+        user: row.user || 'Cobrador',
+        exported: row.exported !== undefined ? !!row.exported : false,
+        exportedAt: row.exported_at || row.exportedAt || null,
+        promiseId: row.promise_id || row.promiseId || null,
+        gestionId: row.gestion_id || row.gestionId || null,
+        createdAt: row.created_at || row.createdAt || ''
+    };
+}
+
+function mapDbToGestion(row) {
+    if (!row) return null;
+    return {
+        id: row.id,
+        clientId: row.client_id || row.clientId || '',
+        date: row.date || '',
+        time: row.time || '',
+        type: row.type || '',
+        result: row.result || '',
+        observations: row.observations || '',
+        nextAction: row.next_action || row.nextAction || '',
+        nextFollowUpDate: row.next_follow_up_date || row.nextFollowUpDate || '',
+        promiseId: row.promise_id || row.promiseId || null,
+        createdAt: row.created_at || row.createdAt || ''
+    };
+}
+
+function mapDbToPromise(row) {
+    if (!row) return null;
+    return {
+        id: row.id,
+        clientId: row.client_id || row.clientId || '',
+        periodMonth: row.period_month || row.periodMonth || '',
+        installmentNumber: (row.installment_number !== undefined && row.installment_number !== null) ? String(row.installment_number) : (row.installmentNumber !== undefined ? String(row.installmentNumber) : ''),
+        creationDate: row.creation_date || row.creationDate || '',
+        promisedDate: row.promised_date || row.promisedDate || '',
+        promisedAmount: row.promised_amount !== undefined && row.promised_amount !== null ? Number(row.promised_amount) : (row.promisedAmount || 0),
+        paymentMethod: row.payment_method || row.paymentMethod || 'Sucursal',
+        observations: row.observations || '',
+        status: row.status || 'pendiente',
+        gestionId: row.gestion_id || row.gestionId || null,
+        paymentId: row.payment_id || row.paymentId || null,
+        createdAt: row.created_at || row.createdAt || ''
+    };
+}
+
 function mapDbToClient(row) {
     if (!row) return null;
     const client = {
         id: row.id,
         name: row.name || '',
-        branchNumber: row.branch_number || '',
-        requestNumber: row.request_number || '',
-        installmentNumber: row.installment_number !== undefined && row.installment_number !== null ? Number(row.installment_number) : 1,
-        totalInstallments: row.total_installments !== undefined && row.total_installments !== null ? Number(row.total_installments) : 12,
-        periodMonth: row.period_month || getToday().substring(0, 7),
-        penaltyRate: row.penalty_rate !== undefined && row.penalty_rate !== null ? Number(row.penalty_rate) : 0.32,
+        branchNumber: row.branch_number || row.branchNumber || '',
+        requestNumber: row.request_number || row.requestNumber || '',
+        installmentNumber: row.installment_number !== undefined && row.installment_number !== null ? Number(row.installment_number) : (row.installmentNumber || 1),
+        totalInstallments: row.total_installments !== undefined && row.total_installments !== null ? Number(row.total_installments) : (row.totalInstallments || 12),
+        periodMonth: row.period_month || row.periodMonth || getToday().substring(0, 7),
+        penaltyRate: row.penalty_rate !== undefined && row.penalty_rate !== null ? Number(row.penalty_rate) : (row.penaltyRate !== undefined ? row.penaltyRate : 0.32),
         dni: row.dni || '',
         type: row.type || '',
-        salaryDay: row.salary_day !== undefined && row.salary_day !== null ? Number(row.salary_day) : 10,
-        paymentDay: row.payment_day !== undefined && row.payment_day !== null ? Number(row.payment_day) : 10,
-        installmentAmount: row.installment_amount !== undefined && row.installment_amount !== null ? Number(row.installment_amount) : 0,
-        loanAmount: row.loan_amount !== undefined && row.loan_amount !== null ? Number(row.loan_amount) : 0,
+        salaryDay: row.salary_day !== undefined && row.salary_day !== null ? Number(row.salary_day) : (row.salaryDay || 10),
+        paymentDay: row.payment_day !== undefined && row.payment_day !== null ? Number(row.payment_day) : (row.paymentDay || 10),
+        installmentAmount: row.installment_amount !== undefined && row.installment_amount !== null ? Number(row.installment_amount) : (row.installmentAmount || 0),
+        loanAmount: row.loan_amount !== undefined && row.loan_amount !== null ? Number(row.loan_amount) : (row.loanAmount || 0),
         phone: row.phone || '',
         email: row.email || '',
         domicilio: row.domicilio || '',
@@ -75,17 +143,17 @@ function mapDbToClient(row) {
         localidad: row.localidad || '',
         zona: row.zona || '',
         notes: row.notes || '',
-        paymentStatus: row.payment_status || 'pending',
-        isOverdue: row.is_overdue || false,
-        daysOverdue: row.days_overdue !== undefined && row.days_overdue !== null ? Number(row.days_overdue) : 0,
-        lastPaymentDate: row.last_payment_date || '',
+        paymentStatus: row.payment_status || row.paymentStatus || 'pending',
+        isOverdue: row.is_overdue !== undefined ? row.is_overdue : !!row.isOverdue,
+        daysOverdue: row.days_overdue !== undefined && row.days_overdue !== null ? Number(row.days_overdue) : (row.daysOverdue || 0),
+        lastPaymentDate: row.last_payment_date || row.lastPaymentDate || '',
         garante: row.garante || '',
         apellido: row.apellido || '',
         apenom: row.apenom || '',
         celular: row.celular || row.phone || '',
-        gestiones: Array.isArray(row.gestiones) ? row.gestiones : [],
-        promises: Array.isArray(row.promises) ? row.promises : [],
-        payments: Array.isArray(row.payments) ? row.payments : []
+        gestiones: Array.isArray(row.gestiones) ? row.gestiones.map(mapDbToGestion) : [],
+        promises: Array.isArray(row.promises) ? row.promises.map(mapDbToPromise) : [],
+        payments: Array.isArray(row.payments) ? row.payments.map(mapDbToPayment) : []
     };
     sanitizeClientSchema(client);
     return client;
@@ -122,10 +190,7 @@ function mapClientToDb(client) {
         garante: client.garante || '',
         apellido: client.apellido || '',
         apenom: client.apenom || '',
-        celular: client.celular || client.phone || '',
-        gestiones: Array.isArray(client.gestiones) ? client.gestiones : [],
-        promises: Array.isArray(client.promises) ? client.promises : [],
-        payments: Array.isArray(client.payments) ? client.payments : []
+        celular: client.celular || client.phone || ''
     };
 }
 
@@ -170,6 +235,230 @@ async function deleteClientFromSupabase(id) {
     }
 }
 
+async function insertPromiseInSupabase(promise, clientId) {
+    if (!supabaseClient) return;
+    try {
+        const payload = {
+            id: promise.id,
+            client_id: clientId,
+            period_month: promise.periodMonth,
+            installment_number: promise.installmentNumber,
+            creation_date: promise.creationDate,
+            promised_date: promise.promisedDate,
+            promised_amount: promise.promisedAmount,
+            payment_method: promise.paymentMethod || 'Sucursal',
+            observations: promise.observations || '',
+            status: promise.status,
+            gestion_id: promise.gestionId || null,
+            payment_id: promise.paymentId || null
+        };
+        const { error } = await supabaseClient.from('promises').upsert(payload);
+        if (error) {
+            console.error('Error upserting promise in Supabase:', error);
+            throw error;
+        }
+    } catch (e) {
+        console.error('Exception upserting promise in Supabase:', e);
+        throw e;
+    }
+}
+
+async function insertGestionInSupabase(gestion, clientId) {
+    if (!supabaseClient) return;
+    try {
+        const payload = {
+            id: gestion.id,
+            client_id: clientId,
+            date: gestion.date,
+            time: gestion.time,
+            type: gestion.type,
+            result: gestion.result,
+            observations: gestion.observations,
+            next_action: gestion.nextAction,
+            next_follow_up_date: gestion.nextFollowUpDate || null,
+            promise_id: gestion.promiseId || null
+        };
+        const { error } = await supabaseClient.from('gestiones').upsert(payload);
+        if (error) {
+            console.error('Error upserting gestion in Supabase:', error);
+            throw error;
+        }
+    } catch (e) {
+        console.error('Exception upserting gestion in Supabase:', e);
+        throw e;
+    }
+}
+
+async function insertPaymentInSupabase(payment, clientId) {
+    if (!supabaseClient) return;
+    try {
+        const payload = {
+            id: payment.id,
+            client_id: clientId,
+            receipt_number: payment.receiptNumber || '',
+            client_name: payment.clientName || '',
+            dni: payment.dni || '',
+            branch_number: payment.branchNumber || '',
+            request_number: payment.requestNumber || '',
+            date: payment.date,
+            time: payment.time,
+            period_month: payment.periodMonth,
+            installment_number: payment.installmentNumber,
+            installment_amount: payment.installmentAmount,
+            punitorios: payment.punitorios || 0,
+            punitorios_waived: payment.punitoriosWaived || 0,
+            amount: payment.amount,
+            amount_given: payment.amountGiven || payment.amount,
+            payment_method: payment.paymentMethod || 'Efectivo',
+            payment_type: payment.paymentType || 'total',
+            days_overdue: payment.daysOverdue || 0,
+            notes: payment.notes || '',
+            user: payment.user || 'Cobrador',
+            exported: !!payment.exported,
+            exported_at: payment.exportedAt || null,
+            promise_id: payment.promiseId || null,
+            gestion_id: payment.gestionId || null
+        };
+        const { error } = await supabaseClient.from('payments').upsert(payload);
+        if (error) {
+            console.error('Error upserting payment in Supabase:', error);
+            throw error;
+        }
+    } catch (e) {
+        console.error('Exception upserting payment in Supabase:', e);
+        throw e;
+    }
+}
+
+async function getLocalClientsForMigration() {
+    let localClients = [];
+    try {
+        const db = await openDB();
+        if (db) {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.getAll();
+            localClients = await new Promise((resolve) => {
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => resolve([]);
+            });
+        }
+    } catch (e) {
+        console.warn('Error reading IndexedDB for migration:', e);
+    }
+
+    if (!localClients || localClients.length === 0) {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) localClients = JSON.parse(raw);
+        } catch (e) {
+            console.warn('Error reading localStorage for migration:', e);
+        }
+    }
+
+    if (!localClients || localClients.length === 0) {
+        localClients = clients || [];
+    }
+
+    return localClients;
+}
+
+async function migrateLocalDataToSupabase() {
+    if (!supabaseClient) {
+        showToast('Supabase no está disponible o no está configurado.', 'error');
+        return;
+    }
+
+    const confirmMigrate = confirm(
+        '¿Deseas migrar todos los datos locales (clientes, pagos, gestiones y promesas) a Supabase?'
+    );
+    if (!confirmMigrate) return;
+
+    showToast('Iniciando migración de datos locales a Supabase...', 'info');
+
+    const localClients = await getLocalClientsForMigration();
+
+    if (!localClients || localClients.length === 0) {
+        showToast('No se encontraron datos locales para migrar.', 'warning');
+        return;
+    }
+
+    let clientsMigrated = 0;
+    let paymentsMigrated = 0;
+    let gestionesMigrated = 0;
+    let promisesMigrated = 0;
+    let errorsCount = 0;
+
+    for (const c of localClients) {
+        try {
+            sanitizeClientSchema(c);
+            const clientPayload = mapClientToDb(c);
+            const { error: clientError } = await supabaseClient.from('clients').upsert(clientPayload);
+
+            if (clientError) {
+                console.error(`Error migrando cliente ID ${c.id} (${c.name}):`, clientError);
+                errorsCount++;
+                continue;
+            }
+
+            clientsMigrated++;
+
+            if (Array.isArray(c.payments)) {
+                for (const p of c.payments) {
+                    try {
+                        await insertPaymentInSupabase(p, c.id);
+                        paymentsMigrated++;
+                    } catch (errP) {
+                        console.error(`Error migrando pago ${p.id} del cliente ${c.id}:`, errP);
+                        errorsCount++;
+                    }
+                }
+            }
+
+            if (Array.isArray(c.gestiones)) {
+                for (const g of c.gestiones) {
+                    try {
+                        await insertGestionInSupabase(g, c.id);
+                        gestionesMigrated++;
+                    } catch (errG) {
+                        console.error(`Error migrando gestión ${g.id} del cliente ${c.id}:`, errG);
+                        errorsCount++;
+                    }
+                }
+            }
+
+            if (Array.isArray(c.promises)) {
+                for (const pr of c.promises) {
+                    try {
+                        await insertPromiseInSupabase(pr, c.id);
+                        promisesMigrated++;
+                    } catch (errPr) {
+                        console.error(`Error migrando promesa ${pr.id} del cliente ${c.id}:`, errPr);
+                        errorsCount++;
+                    }
+                }
+            }
+        } catch (errC) {
+            console.error(`Excepción migrando cliente ${c.id}:`, errC);
+            errorsCount++;
+        }
+    }
+
+    const summaryMsg = `${clientsMigrated} clientes, ${paymentsMigrated} pagos, ${gestionesMigrated} gestiones y ${promisesMigrated} promesas migrados a Supabase.`;
+    console.log(summaryMsg);
+
+    if (errorsCount > 0) {
+        showToast(`Migración completada: ${summaryMsg} (${errorsCount} errores)`, 'warning');
+        alert(`Migración completada:\n${summaryMsg}\n\nOcurrieron ${errorsCount} errores durante la migración (revisar consola).`);
+    } else {
+        showToast(`Migración completada: ${summaryMsg}`, 'success');
+        alert(`Migración completada:\n${summaryMsg}`);
+    }
+
+    await loadClients();
+    renderClients();
+}
+
 function openDB() {
     return new Promise((resolve, reject) => {
         if (!window.indexedDB) {
@@ -198,7 +487,9 @@ async function loadClients() {
     // 1. Try Supabase
     if (supabaseClient) {
         try {
-            const { data, error } = await supabaseClient.from('clients').select('*');
+            const { data, error } = await supabaseClient
+                .from('clients')
+                .select('*, payments(*), gestiones(*), promises(*)');
             if (error) {
                 console.error('Error loading clients from Supabase:', error);
             } else if (data) {
@@ -2494,7 +2785,7 @@ function toggleGestionWaBtn() {
     }
 }
 
-function handleSaveGestion(e) {
+async function handleSaveGestion(e) {
     e.preventDefault();
 
     const id = document.getElementById('gestionClientId').value;
@@ -2544,11 +2835,13 @@ function handleSaveGestion(e) {
 
         if (!client.promises) client.promises = [];
         client.promises.push(newPromise);
+        await insertPromiseInSupabase(newPromise, client.id);
         newGestion.promiseId = newPromise.id;
     }
 
     if (!client.gestiones) client.gestiones = [];
     client.gestiones.push(newGestion);
+    await insertGestionInSupabase(newGestion, client.id);
 
     updateOverdueStatuses();
     updateClientInSupabase(client);
@@ -2880,6 +3173,11 @@ function updatePromiseStatus(clientId, promiseId, newStatus) {
     if (!promise) return;
 
     promise.status = newStatus;
+    if (supabaseClient) {
+        supabaseClient.from('promises').update({ status: newStatus }).eq('id', promiseId).then(({ error }) => {
+            if (error) console.error('Error updating promise status in Supabase:', error);
+        });
+    }
     updateOverdueStatuses();
     updateClientInSupabase(client);
     saveClients();
@@ -2893,7 +3191,7 @@ function updatePromiseStatus(clientId, promiseId, newStatus) {
     showToast(`Promesa de pago marcada como ${labelMap[newStatus] || newStatus}`, 'info');
 }
 
-function handleSavePromise(e) {
+async function handleSavePromise(e) {
     e.preventDefault();
 
     const id = document.getElementById('promiseClientId').value;
@@ -2925,6 +3223,7 @@ function handleSavePromise(e) {
 
     if (!client.promises) client.promises = [];
     client.promises.push(newPromise);
+    await insertPromiseInSupabase(newPromise, client.id);
 
     updateOverdueStatuses();
     updateClientInSupabase(client);
@@ -4886,6 +5185,11 @@ function handleStartExport(e) {
         payment.exported = true;
         payment.exportedAt = exportTime;
         if (client) affectedClients.add(client);
+        if (supabaseClient) {
+            supabaseClient.from('payments').update({ exported: true, exported_at: exportTime }).eq('id', payment.id).then(({ error }) => {
+                if (error) console.error('Error updating payment export status in Supabase:', error);
+            });
+        }
     });
 
     affectedClients.forEach(c => updateClientInSupabase(c));
@@ -5297,7 +5601,7 @@ function toggleOverdueFields() {
     els.daysOverdueGroup.style.display = showOverdue ? 'block' : 'none';
 }
 
-function handleSavePayment(e) {
+async function handleSavePayment(e) {
     e.preventDefault();
 
     const id = els.paymentClientId.value;
@@ -5416,12 +5720,18 @@ function handleSavePayment(e) {
             if (pr.id === linkedPromiseId || pr.status === 'pendiente' || pr.status === 'vencida') {
                 pr.status = 'cumplida';
                 pr.paymentId = newPayment.id;
+                if (supabaseClient) {
+                    supabaseClient.from('promises').update({ status: 'cumplida', payment_id: newPayment.id }).eq('id', pr.id).then(({ error }) => {
+                        if (error) console.error('Error updating promise in Supabase:', error);
+                    });
+                }
             }
         });
     }
 
     if (!client.payments) client.payments = [];
     client.payments.push(newPayment);
+    await insertPaymentInSupabase(newPayment, client.id);
     client.lastPaymentDate = paymentDate;
 
     updateOverdueStatuses();
@@ -5869,6 +6179,10 @@ function setupEventListeners() {
             importData(e.target.files[0]);
         }
     });
+    const migrateBtn = document.getElementById('migrateLocalToSupabaseBtn');
+    if (migrateBtn) {
+        migrateBtn.addEventListener('click', migrateLocalDataToSupabase);
+    }
     els.resetDemoBtn.addEventListener('click', resetDemoData);
 
     const cancelImportBtn = document.getElementById('cancelImportBtn');

@@ -44,7 +44,7 @@ global.localStorage = {
 };
 
 // Evaluate app.js logic in global context
-eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient ='));
+eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient =').replace(/^let supabaseClient =/m, 'var supabaseClient ='));
 
 console.log('--- STARTING PALMARES AUTOMATED TEST SUITE ---');
 
@@ -52,9 +52,19 @@ let passCount = 0;
 
 function runTest(name, fn) {
     try {
-        fn();
-        console.log(`[PASS] ${name}`);
-        passCount++;
+        const res = fn();
+        if (res && typeof res.then === 'function') {
+            res.then(() => {
+                console.log(`[PASS] ${name}`);
+                passCount++;
+            }).catch(err => {
+                console.error(`[FAIL] ${name}:`, err);
+                process.exit(1);
+            });
+        } else {
+            console.log(`[PASS] ${name}`);
+            passCount++;
+        }
     } catch (err) {
         console.error(`[FAIL] ${name}:`, err.message);
         process.exit(1);
@@ -1333,4 +1343,64 @@ runTest('27. Collection Management Report Calculations & Date Ranges Test', () =
     assert.strictEqual(emptyReport.pagosConcretados, 0, '0 pagos in empty period');
     assert.strictEqual(emptyReport.montoCobrado, 0, '0 monto cobrado in empty period');
     assert.strictEqual(emptyReport.periodGestiones.length, 0, 'Empty gestiones list');
+});
+
+runTest('28. Migration Utility - Local Data to Supabase Upsert Test', async () => {
+    // Setup mock local client with gestiones, promises, and payments
+    const testClient = {
+        id: 'c_mig_1',
+        name: 'Cliente Migración',
+        dni: '12345678',
+        installmentAmount: 10000,
+        gestiones: [{ id: 'g_mig_1', date: '2025-05-01', type: 'Llamada', result: 'Contactado' }],
+        promises: [{ id: 'pr_mig_1', promisedDate: '2025-05-05', promisedAmount: 10000, status: 'pendiente' }],
+        payments: [{ id: 'p_mig_1', amount: 10000, date: '2025-05-02', receiptNumber: '00009999' }]
+    };
+
+    clients = [testClient];
+    localStorage.setItem('palmares_clientes', JSON.stringify([testClient]));
+
+    const insertedTables = {
+        clients: [],
+        payments: [],
+        gestiones: [],
+        promises: []
+    };
+
+    global.confirm = () => true;
+    global.alert = () => {};
+
+    // Mock supabaseClient for test
+    const origSupabase = supabaseClient;
+    supabaseClient = {
+        from: (tableName) => ({
+            upsert: async (payload) => {
+                insertedTables[tableName].push(payload);
+                return { error: null };
+            },
+            select: () => ({
+                data: [],
+                error: null
+            })
+        })
+    };
+
+    await migrateLocalDataToSupabase();
+
+    supabaseClient = origSupabase;
+
+    assert.strictEqual(insertedTables.clients.length, 1, 'Client upserted to clients table');
+    assert.strictEqual(insertedTables.clients[0].id, 'c_mig_1', 'Correct client ID');
+    assert.strictEqual(insertedTables.clients[0].gestiones, undefined, 'Client payload does NOT contain gestiones array');
+    assert.strictEqual(insertedTables.clients[0].promises, undefined, 'Client payload does NOT contain promises array');
+    assert.strictEqual(insertedTables.clients[0].payments, undefined, 'Client payload does NOT contain payments array');
+
+    assert.strictEqual(insertedTables.gestiones.length, 1, 'Gestion inserted to gestiones table');
+    assert.strictEqual(insertedTables.gestiones[0].client_id, 'c_mig_1', 'Gestion has correct client_id');
+
+    assert.strictEqual(insertedTables.promises.length, 1, 'Promise inserted to promises table');
+    assert.strictEqual(insertedTables.promises[0].client_id, 'c_mig_1', 'Promise has correct client_id');
+
+    assert.strictEqual(insertedTables.payments.length, 1, 'Payment inserted to payments table');
+    assert.strictEqual(insertedTables.payments[0].client_id, 'c_mig_1', 'Payment has correct client_id');
 });
