@@ -44,31 +44,24 @@ global.localStorage = {
 };
 
 // Evaluate app.js logic in global context
-eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient =').replace(/^let supabaseClient =/m, 'var supabaseClient ='));
+eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient =').replace(/^let supabaseClient =/m, 'var supabaseClient =').replace(/^function toNullableDate/m, 'global.toNullableDate = function'));
 
 console.log('--- STARTING PALMARES AUTOMATED TEST SUITE ---');
 
 let passCount = 0;
+let testQueue = Promise.resolve();
 
 function runTest(name, fn) {
-    try {
-        const res = fn();
-        if (res && typeof res.then === 'function') {
-            res.then(() => {
-                console.log(`[PASS] ${name}`);
-                passCount++;
-            }).catch(err => {
-                console.error(`[FAIL] ${name}:`, err);
-                process.exit(1);
-            });
-        } else {
+    testQueue = testQueue.then(async () => {
+        try {
+            await fn();
             console.log(`[PASS] ${name}`);
             passCount++;
+        } catch (err) {
+            console.error(`[FAIL] ${name}:`, err);
+            process.exit(1);
         }
-    } catch (err) {
-        console.error(`[FAIL] ${name}:`, err.message);
-        process.exit(1);
-    }
+    });
 }
 
 runTest('1. Schema Migration & Backward Compatibility', () => {
@@ -1403,4 +1396,119 @@ runTest('28. Migration Utility - Local Data to Supabase Upsert Test', async () =
 
     assert.strictEqual(insertedTables.payments.length, 1, 'Payment inserted to payments table');
     assert.strictEqual(insertedTables.payments[0].client_id, 'c_mig_1', 'Payment has correct client_id');
+});
+
+runTest('29. Nullable Dates & Schema Formatting Test (toNullableDate)', () => {
+    assert.strictEqual(toNullableDate(''), null, 'Empty string becomes null');
+    assert.strictEqual(toNullableDate(undefined), null, 'undefined becomes null');
+    assert.strictEqual(toNullableDate(null), null, 'null stays null');
+    assert.strictEqual(toNullableDate('2025-05-10'), '2025-05-10', 'Valid date string preserved');
+
+    const testClient = {
+        id: 'c_null_date_1',
+        name: 'Cliente Sin Fecha Pago',
+        lastPaymentDate: ''
+    };
+
+    const payload = mapClientToDb(testClient);
+    assert.strictEqual(payload.last_payment_date, null, 'mapClientToDb turns empty lastPaymentDate to null');
+});
+
+runTest('30. handleSaveGestion Insertion Order (Gestion Before Promise) & Foreign Key Linkage', async () => {
+    localStorage._data = {};
+    const client = {
+        id: 'c_order_test',
+        name: 'Cliente Orden Insercion',
+        installmentAmount: 50000,
+        periodMonth: '2025-05',
+        installmentNumber: 1,
+        gestiones: [],
+        promises: []
+    };
+    clients = [client];
+
+    const elementStore = {
+        gestionClientId: { value: 'c_order_test', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        gestionDate: { value: '2025-05-10', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        gestionTime: { value: '10:30', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        gestionType: { value: 'Llamada telefónica', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        gestionResult: { value: 'Prometió pagar', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        gestionObservations: { value: 'Promesa de pago en sucursal', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        nextAction: { value: 'Llamar para verificar', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        nextFollowUpDate: { value: '2025-05-15', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        autoPromisedDate: { value: '2025-05-20', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        autoPromisedAmount: { value: '50000', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        autoPromiseMethod: { value: 'Sucursal', style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        gestionModal: { style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        notificationsBadge: { style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } },
+        toastContainer: { style: {}, appendChild: () => {}, querySelectorAll: () => [] }
+    };
+
+    if (typeof els !== 'undefined' && els) {
+        els.toastContainer = elementStore.toastContainer;
+    }
+
+    const origGetElementById = document.getElementById;
+    document.getElementById = (id) => {
+        if (elementStore[id]) return elementStore[id];
+        const defaultEl = origGetElementById(id);
+        if (defaultEl) {
+            defaultEl.style = defaultEl.style || {};
+            defaultEl.appendChild = defaultEl.appendChild || (() => {});
+        }
+        return defaultEl;
+    };
+
+    const origShowToast = showToast;
+    showToast = () => {};
+
+    const callSequence = [];
+
+    const origSupabase = supabaseClient;
+    supabaseClient = {
+        from: (tableName) => ({
+            upsert: async (payload) => {
+                callSequence.push({ table: tableName, action: 'upsert', payload });
+                return { error: null };
+            },
+            update: (payload) => {
+                callSequence.push({ table: tableName, action: 'update', payload });
+                return { eq: async () => ({ error: null }) };
+            },
+            insert: async (payload) => {
+                callSequence.push({ table: tableName, action: 'insert', payload });
+                return { error: null };
+            },
+            select: () => ({
+                eq: async () => ({ data: [], error: null })
+            })
+        })
+    };
+
+    const mockEvent = { preventDefault: () => {} };
+    callSequence.length = 0;
+    await handleSaveGestion(mockEvent);
+
+    showToast = origShowToast;
+    document.getElementById = origGetElementById;
+    supabaseClient = origSupabase;
+
+    const upserts = callSequence.filter(c => c.payload && c.payload.client_id === 'c_order_test' && (c.table === 'gestiones' || c.table === 'promises'));
+
+    assert.ok(upserts.length >= 3, 'At least 3 Supabase upsert calls were made');
+    assert.strictEqual(upserts[0].table, 'gestiones', '1st Supabase call is to gestiones table');
+    assert.strictEqual(upserts[0].payload.client_id, 'c_order_test', '1st gestion call has client_id');
+    assert.strictEqual(upserts[0].payload.date, '2025-05-10', '1st gestion call has valid date');
+
+    assert.strictEqual(upserts[1].table, 'promises', '2nd Supabase call is to promises table');
+    const createdGestionId = upserts[0].payload.id;
+    assert.strictEqual(upserts[1].payload.gestion_id, createdGestionId, 'Promise gestion_id matches created gestion id');
+
+    assert.strictEqual(upserts[2].table, 'gestiones', '3rd Supabase call updates gestiones table');
+    const createdPromiseId = upserts[1].payload.id;
+    assert.strictEqual(upserts[2].payload.promise_id, createdPromiseId, 'Updated gestion promise_id matches created promise id');
+});
+
+testQueue.then(() => {
+    console.log(`--- ALL ${passCount} TESTS PASSED SUCCESSFULLY ---`);
 });

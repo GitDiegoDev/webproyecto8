@@ -159,6 +159,10 @@ function mapDbToClient(row) {
     return client;
 }
 
+function toNullableDate(value) {
+    return (value === '' || value === undefined || value === null) ? null : value;
+}
+
 function mapClientToDb(client) {
     if (!client) return null;
     return {
@@ -186,7 +190,7 @@ function mapClientToDb(client) {
         payment_status: client.paymentStatus || 'pending',
         is_overdue: !!client.isOverdue,
         days_overdue: client.daysOverdue !== undefined ? Number(client.daysOverdue) : 0,
-        last_payment_date: client.lastPaymentDate || '',
+        last_payment_date: toNullableDate(client.lastPaymentDate),
         garante: client.garante || '',
         apellido: client.apellido || '',
         apenom: client.apenom || '',
@@ -243,8 +247,8 @@ async function insertPromiseInSupabase(promise, clientId) {
             client_id: clientId,
             period_month: promise.periodMonth,
             installment_number: promise.installmentNumber,
-            creation_date: promise.creationDate,
-            promised_date: promise.promisedDate,
+            creation_date: toNullableDate(promise.creationDate),
+            promised_date: toNullableDate(promise.promisedDate),
             promised_amount: promise.promisedAmount,
             payment_method: promise.paymentMethod || 'Sucursal',
             observations: promise.observations || '',
@@ -265,17 +269,21 @@ async function insertPromiseInSupabase(promise, clientId) {
 
 async function insertGestionInSupabase(gestion, clientId) {
     if (!supabaseClient) return;
+    if (!clientId) {
+        console.error('Error en insertGestionInSupabase: clientId no proporcionado', gestion);
+        return;
+    }
     try {
         const payload = {
             id: gestion.id,
             client_id: clientId,
-            date: gestion.date,
+            date: toNullableDate(gestion.date || getToday()),
             time: gestion.time,
             type: gestion.type,
             result: gestion.result,
             observations: gestion.observations,
             next_action: gestion.nextAction,
-            next_follow_up_date: gestion.nextFollowUpDate || null,
+            next_follow_up_date: toNullableDate(gestion.nextFollowUpDate),
             promise_id: gestion.promiseId || null
         };
         const { error } = await supabaseClient.from('gestiones').upsert(payload);
@@ -300,7 +308,7 @@ async function insertPaymentInSupabase(payment, clientId) {
             dni: payment.dni || '',
             branch_number: payment.branchNumber || '',
             request_number: payment.requestNumber || '',
-            date: payment.date,
+            date: toNullableDate(payment.date),
             time: payment.time,
             period_month: payment.periodMonth,
             installment_number: payment.installmentNumber,
@@ -315,7 +323,7 @@ async function insertPaymentInSupabase(payment, clientId) {
             notes: payment.notes || '',
             user: payment.user || 'Cobrador',
             exported: !!payment.exported,
-            exported_at: payment.exportedAt || null,
+            exported_at: toNullableDate(payment.exportedAt),
             promise_id: payment.promiseId || null,
             gestion_id: payment.gestionId || null
         };
@@ -418,6 +426,12 @@ async function migrateLocalDataToSupabase() {
             if (Array.isArray(c.gestiones)) {
                 for (const g of c.gestiones) {
                     try {
+                        if (!c.id) {
+                            console.error('Error migrando gestión: client.id no está definido', g);
+                            errorsCount++;
+                            continue;
+                        }
+                        g.date = g.date || getToday();
                         await insertGestionInSupabase(g, c.id);
                         gestionesMigrated++;
                     } catch (errG) {
@@ -2790,7 +2804,10 @@ async function handleSaveGestion(e) {
 
     const id = document.getElementById('gestionClientId').value;
     const client = clients.find(c => c.id === id);
-    if (!client) return;
+    if (!client || !client.id) {
+        console.error('No se encontró cliente válido con ID para registrar la gestión.');
+        return;
+    }
 
     const gDate = document.getElementById('gestionDate').value || getToday();
     const gTime = document.getElementById('gestionTime').value || getCurrentTime();
@@ -2802,7 +2819,7 @@ async function handleSaveGestion(e) {
 
     const newGestion = {
         id: generateId(),
-        date: gDate,
+        date: gDate || getToday(),
         time: gTime,
         type: gType,
         result: gResult,
@@ -2812,6 +2829,10 @@ async function handleSaveGestion(e) {
         promiseId: null,
         createdAt: new Date().toISOString()
     };
+
+    if (!client.gestiones) client.gestiones = [];
+    client.gestiones.push(newGestion);
+    await insertGestionInSupabase(newGestion, client.id);
 
     if (gResult === 'Prometió pagar') {
         const pDate = document.getElementById('autoPromisedDate').value || gDate;
@@ -2836,12 +2857,10 @@ async function handleSaveGestion(e) {
         if (!client.promises) client.promises = [];
         client.promises.push(newPromise);
         await insertPromiseInSupabase(newPromise, client.id);
-        newGestion.promiseId = newPromise.id;
-    }
 
-    if (!client.gestiones) client.gestiones = [];
-    client.gestiones.push(newGestion);
-    await insertGestionInSupabase(newGestion, client.id);
+        newGestion.promiseId = newPromise.id;
+        await insertGestionInSupabase(newGestion, client.id);
+    }
 
     updateOverdueStatuses();
     updateClientInSupabase(client);
