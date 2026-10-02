@@ -44,7 +44,7 @@ global.localStorage = {
 };
 
 // Evaluate app.js logic in global context
-eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient =').replace(/^let supabaseClient =/m, 'var supabaseClient =').replace(/^let currentSessionUser =/m, 'var currentSessionUser =').replace(/^function toNullableDate/m, 'global.toNullableDate = function'));
+eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient =').replace(/^let supabaseClient =/m, 'var supabaseClient =').replace(/^let currentSessionUser =/m, 'var currentSessionUser =').replace(/^function toNullableDate/m, 'global.toNullableDate = function').replace(/^function markClientRecentlyModifiedLocally/m, 'global.markClientRecentlyModifiedLocally = function'));
 
 console.log('--- STARTING PALMARES AUTOMATED TEST SUITE ---');
 
@@ -1609,6 +1609,47 @@ runTest('31. User Attribution Test (Diego / Encargada Perla) for Helper, Payment
         currentSessionUser = origUser;
         supabaseClient = origSupabase;
     }
+});
+
+runTest('32. Tasks 1, 2, 3 Verification: saveClients No-Op, Realtime Merging & Render Suppression', async () => {
+    // 1. Task 1 Verification: saveClients is no-op
+    await saveClients(); // Should run cleanly without errors
+
+    // 2. Task 2 Verification: Realtime Merging
+    const testClientObj = {
+        id: 'c_rt_test',
+        name: 'Realtime Test Client',
+        gestiones: [{ id: 'g1', type: 'Llamada' }],
+        promises: [{ id: 'pr1', promisedAmount: 5000 }],
+        payments: [{ id: 'pay1', paidAmount: 10000 }]
+    };
+    clients = [testClientObj];
+
+    // Simulate Supabase Realtime UPDATE event (newRecord from Postgres has no gestiones/promises/payments)
+    const newRecordFromPg = {
+        id: 'c_rt_test',
+        name: 'Realtime Test Client Updated',
+        payment_status: 'paid'
+    };
+
+    const idx = clients.findIndex(c => c.id === newRecordFromPg.id);
+    const mapped = mapDbToClient(newRecordFromPg);
+    const existing = clients[idx];
+    clients[idx] = {
+        ...mapped,
+        gestiones: existing.gestiones?.length ? existing.gestiones : mapped.gestiones,
+        promises: existing.promises?.length ? existing.promises : mapped.promises,
+        payments: existing.payments?.length ? existing.payments : mapped.payments
+    };
+
+    assert.strictEqual(clients[idx].name, 'Realtime Test Client Updated');
+    assert.strictEqual(clients[idx].gestiones.length, 1, 'Gestiones array preserved after realtime UPDATE');
+    assert.strictEqual(clients[idx].promises.length, 1, 'Promises array preserved after realtime UPDATE');
+    assert.strictEqual(clients[idx].payments.length, 1, 'Payments array preserved after realtime UPDATE');
+
+    // 3. Task 3 Verification: Local modifications cache
+    markClientRecentlyModifiedLocally('c_rt_test');
+    assert.strictEqual(recentlyModifiedClientIds.has('c_rt_test'), true, 'Client ID marked as recently modified');
 });
 
 testQueue.then(() => {

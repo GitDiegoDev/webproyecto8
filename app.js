@@ -206,8 +206,18 @@ function mapClientToDb(client) {
     };
 }
 
+var recentlyModifiedClientIds = new Set();
+function markClientRecentlyModifiedLocally(clientId) {
+    if (!clientId) return;
+    recentlyModifiedClientIds.add(clientId);
+    setTimeout(() => {
+        recentlyModifiedClientIds.delete(clientId);
+    }, 3500);
+}
+
 async function insertClientInSupabase(client) {
     if (!supabaseClient) return;
+    if (client && client.id) markClientRecentlyModifiedLocally(client.id);
     try {
         const payload = mapClientToDb(client);
         const { error } = await supabaseClient.from('clients').insert(payload);
@@ -222,6 +232,7 @@ async function insertClientInSupabase(client) {
 
 async function updateClientInSupabase(client) {
     if (!supabaseClient) return;
+    if (client && client.id) markClientRecentlyModifiedLocally(client.id);
     try {
         const payload = mapClientToDb(client);
         const { error } = await supabaseClient.from('clients').update(payload).eq('id', client.id);
@@ -249,6 +260,7 @@ async function deleteClientFromSupabase(id) {
 
 async function insertPromiseInSupabase(promise, clientId) {
     if (!supabaseClient) return;
+    if (clientId) markClientRecentlyModifiedLocally(clientId);
     try {
         const payload = {
             id: promise.id,
@@ -281,6 +293,7 @@ async function insertGestionInSupabase(gestion, clientId) {
         console.error('Error en insertGestionInSupabase: clientId no proporcionado', gestion);
         return;
     }
+    markClientRecentlyModifiedLocally(clientId);
     try {
         const payload = {
             id: gestion.id,
@@ -308,6 +321,7 @@ async function insertGestionInSupabase(gestion, clientId) {
 
 async function insertPaymentInSupabase(payment, clientId) {
     if (!supabaseClient) return;
+    if (clientId) markClientRecentlyModifiedLocally(clientId);
     try {
         const payload = {
             id: payment.id,
@@ -576,29 +590,8 @@ async function loadClients() {
 }
 
 async function saveClients() {
-    // 1. Save to IndexedDB
-    try {
-        const db = await openDB();
-        if (db) {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            store.clear();
-            clients.forEach(client => store.put(client));
-        }
-    } catch (e) {
-        console.warn('IndexedDB save failed:', e);
-    }
-
-    // 2. Save to localStorage with QuotaExceeded handling
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
-    } catch (e) {
-        if (e.name === 'QuotaExceededError' || e.code === 22) {
-            showToast('Almacenamiento lleno. Por favor exporta una copia de seguridad.', 'error');
-        } else {
-            console.warn('localStorage save failed (incognito/restricted):', e);
-        }
-    }
+    // No-op: Supabase is the single source of truth.
+    // Preserved function definition to maintain backwards compatibility with any callers.
 }
 
 function getCurrentTime() {
@@ -6585,27 +6578,31 @@ function setupRealtimeSync() {
             (payload) => {
                 const { eventType, new: newRecord, old: oldRecord } = payload;
 
-                if (eventType === 'INSERT' && newRecord) {
-                    const client = mapDbToClient(newRecord);
-                    const idx = clients.findIndex(c => c.id === client.id);
+                if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
+                    const idx = clients.findIndex(c => c.id === newRecord.id);
+                    const mapped = mapDbToClient(newRecord);
                     if (idx === -1) {
-                        clients.push(client);
+                        clients.push(mapped);
                     } else {
-                        clients[idx] = client;
-                    }
-                } else if (eventType === 'UPDATE' && newRecord) {
-                    const client = mapDbToClient(newRecord);
-                    const idx = clients.findIndex(c => c.id === client.id);
-                    if (idx !== -1) {
-                        clients[idx] = client;
-                    } else {
-                        clients.push(client);
+                        const existing = clients[idx];
+                        clients[idx] = {
+                            ...mapped,
+                            gestiones: existing.gestiones?.length ? existing.gestiones : mapped.gestiones,
+                            promises: existing.promises?.length ? existing.promises : mapped.promises,
+                            payments: existing.payments?.length ? existing.payments : mapped.payments
+                        };
                     }
                 } else if (eventType === 'DELETE' && oldRecord) {
                     clients = clients.filter(c => c.id !== oldRecord.id);
                 }
 
                 updateOverdueStatuses();
+
+                // Skip redundant re-render if the event was triggered by our own recent local modification
+                if (newRecord && recentlyModifiedClientIds.has(newRecord.id)) {
+                    return;
+                }
+
                 renderClients();
             }
         )
