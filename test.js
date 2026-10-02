@@ -44,7 +44,7 @@ global.localStorage = {
 };
 
 // Evaluate app.js logic in global context
-eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient =').replace(/^let supabaseClient =/m, 'var supabaseClient =').replace(/^function toNullableDate/m, 'global.toNullableDate = function'));
+eval(jsCode.replace(/^let clients =/m, 'var clients =').replace(/^let selectedAddressClient =/m, 'var selectedAddressClient =').replace(/^let supabaseClient =/m, 'var supabaseClient =').replace(/^let currentSessionUser =/m, 'var currentSessionUser =').replace(/^function toNullableDate/m, 'global.toNullableDate = function'));
 
 console.log('--- STARTING PALMARES AUTOMATED TEST SUITE ---');
 
@@ -1507,6 +1507,108 @@ runTest('30. handleSaveGestion Insertion Order (Gestion Before Promise) & Foreig
     assert.strictEqual(upserts[2].table, 'gestiones', '3rd Supabase call updates gestiones table');
     const createdPromiseId = upserts[1].payload.id;
     assert.strictEqual(upserts[2].payload.promise_id, createdPromiseId, 'Updated gestion promise_id matches created promise id');
+});
+
+runTest('31. User Attribution Test (Diego / Encargada Perla) for Helper, Payments, Gestiones & Reports', async () => {
+    const origUser = currentSessionUser;
+    const origSupabase = supabaseClient;
+
+    try {
+        // 1. Helper getCurrentUserDisplayName()
+        supabaseClient = {
+            auth: { getUser: () => {} },
+            from: () => ({ upsert: async () => ({ error: null }), update: () => ({ eq: async () => ({ error: null }) }) })
+        };
+
+        currentSessionUser = { user_metadata: { display_name: 'Diego' }, email: 'diego@palmares.com' };
+        assert.strictEqual(getCurrentUserDisplayName(), 'Diego', 'Returns display_name "Diego"');
+
+        currentSessionUser = { user_metadata: { display_name: 'Encargada Perla' }, email: 'perla@palmares.com' };
+        assert.strictEqual(getCurrentUserDisplayName(), 'Encargada Perla', 'Returns display_name "Encargada Perla"');
+
+        currentSessionUser = { email: 'sin_display@palmares.com' };
+        assert.strictEqual(getCurrentUserDisplayName(), 'sin_display@palmares.com', 'Fallback to email when display_name missing');
+
+        currentSessionUser = null;
+        assert.strictEqual(getCurrentUserDisplayName(), 'Usuario', 'Fallback to "Usuario" when no user session');
+
+        // 2. Payments User Attribution (Diego)
+        currentSessionUser = { user_metadata: { display_name: 'Diego' }, email: 'diego@palmares.com' };
+        const testClient = {
+            id: 'c_user_test',
+            name: 'Cliente Prueba Usuario',
+            type: 'jubilado',
+            installmentAmount: 15000,
+            installmentNumber: 1,
+            totalInstallments: 12,
+            periodMonth: '2026-03',
+            paymentStatus: 'pending',
+            payments: [],
+            gestiones: [],
+            promises: []
+        };
+
+        // Mock DOM elements for Payment Modal
+        const mockEls = {};
+        ['paymentClientId', 'paymentDate', 'paymentTime', 'paymentUser', 'paymentPeriodMonth',
+         'paymentInstallmentNumber', 'paidAmount', 'amountGiven', 'paymentNotes', 'daysOverdue',
+         'punitoriosGenerated', 'punitoriosWaived'].forEach(id => {
+            mockEls[id] = { value: '', style: {}, classList: { add: () => {}, remove: () => {} }, addEventListener: () => {} };
+        });
+        mockEls['paymentType'] = { value: 'total', style: {}, classList: { add: () => {}, remove: () => {} }, addEventListener: () => {} };
+        mockEls['paymentMethod'] = { value: 'Efectivo', style: {}, classList: { add: () => {}, remove: () => {} }, addEventListener: () => {} };
+        mockEls['hasPaid'] = { checked: false, addEventListener: () => {} };
+        mockEls['isOverdue'] = { checked: false, addEventListener: () => {} };
+
+        const origGetElementById = document.getElementById;
+        document.getElementById = (id) => mockEls[id] || { value: '', style: {}, classList: { add: () => {}, remove: () => {} }, addEventListener: () => {}, querySelector: () => ({ className: '' }) };
+
+        clients = [testClient];
+        openPaymentModal('c_user_test');
+        assert.strictEqual(mockEls['paymentUser'].value, 'Diego', 'openPaymentModal populates paymentUser with current user "Diego"');
+
+        mockEls['paymentClientId'].value = 'c_user_test';
+        mockEls['paidAmount'].value = '15000';
+        mockEls['amountGiven'].value = '15000';
+        mockEls['paymentPeriodMonth'].value = '2026-03';
+        mockEls['paymentInstallmentNumber'].value = '1';
+
+        await handleSavePayment({ preventDefault: () => {} });
+        assert.strictEqual(testClient.payments.length, 1, 'Payment registered');
+        assert.strictEqual(testClient.payments[0].user, 'Diego', 'Saved payment user is "Diego"');
+
+        // 3. Gestiones User Attribution (Encargada Perla)
+        currentSessionUser = { user_metadata: { display_name: 'Encargada Perla' }, email: 'perla@palmares.com' };
+
+        const gestEls = {};
+        ['gestionClientId', 'gestionDate', 'gestionTime', 'gestionType', 'gestionResult',
+         'gestionObservations', 'nextAction', 'nextFollowUpDate', 'autoPromisedDate',
+         'autoPromisedAmount', 'autoPromiseMethod'].forEach(id => {
+            gestEls[id] = { value: '', style: {}, classList: { add: () => {}, remove: () => {} }, addEventListener: () => {} };
+        });
+        gestEls['gestionClientId'].value = 'c_user_test';
+        gestEls['gestionType'].value = 'Llamada telefónica';
+        gestEls['gestionResult'].value = 'Contactado';
+
+        document.getElementById = (id) => gestEls[id] || mockEls[id] || { value: '', style: {}, classList: { add: () => {}, remove: () => {} }, addEventListener: () => {}, querySelector: () => ({ className: '' }) };
+
+        await handleSaveGestion({ preventDefault: () => {} });
+        assert.strictEqual(testClient.gestiones.length, 1, 'Gestion registered');
+        assert.strictEqual(testClient.gestiones[0].user, 'Encargada Perla', 'Saved gestion user is "Encargada Perla"');
+
+        const mappedGestion = mapDbToGestion({ user_name: 'Encargada Perla', type: 'Llamada telefónica' });
+        assert.strictEqual(mappedGestion.user, 'Encargada Perla', 'mapDbToGestion maps user_name correctly');
+
+        // 4. Report User Attribution
+        currentSessionUser = { user_metadata: { display_name: 'Diego' }, email: 'diego@palmares.com' };
+        const reportData = calculateReportData({ periodPreset: 'this_month' });
+        assert.strictEqual(reportData.userCobrador, 'Diego', 'calculateReportData assigns logged-in user "Diego" as userCobrador');
+
+        document.getElementById = origGetElementById;
+    } finally {
+        currentSessionUser = origUser;
+        supabaseClient = origSupabase;
+    }
 });
 
 testQueue.then(() => {

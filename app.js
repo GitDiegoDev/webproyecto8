@@ -20,6 +20,13 @@ let supabaseClient = (typeof window !== 'undefined' && window.supabase && window
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
+let currentSessionUser = null;
+
+function getCurrentUserDisplayName() {
+    const user = supabaseClient?.auth?.getUser ? currentSessionUser : null;
+    return (user?.user_metadata?.display_name) || user?.email || 'Usuario';
+}
+
 const TYPE_CONFIG = {
     jubilado: { label: 'Jubilado', icon: 'fa-user-clock', color: '#6b4c9a', badgeClass: 'badge-jubilado' },
     docente: { label: 'Docente', icon: 'fa-chalkboard-user', color: '#ec4899', badgeClass: 'badge-docente' },
@@ -96,6 +103,7 @@ function mapDbToGestion(row) {
         nextAction: row.next_action || row.nextAction || '',
         nextFollowUpDate: row.next_follow_up_date || row.nextFollowUpDate || '',
         promiseId: row.promise_id || row.promiseId || null,
+        user: row.user_name || row.userName || row.user || '',
         createdAt: row.created_at || row.createdAt || ''
     };
 }
@@ -284,7 +292,8 @@ async function insertGestionInSupabase(gestion, clientId) {
             observations: gestion.observations,
             next_action: gestion.nextAction,
             next_follow_up_date: toNullableDate(gestion.nextFollowUpDate),
-            promise_id: gestion.promiseId || null
+            promise_id: gestion.promiseId || null,
+            user_name: gestion.user || null
         };
         const { error } = await supabaseClient.from('gestiones').upsert(payload);
         if (error) {
@@ -2827,6 +2836,7 @@ async function handleSaveGestion(e) {
         nextAction: nextAct,
         nextFollowUpDate: nextDate,
         promiseId: null,
+        user: getCurrentUserDisplayName(),
         createdAt: new Date().toISOString()
     };
 
@@ -3074,7 +3084,7 @@ function renderClientHistoryTimeline(client) {
             gestionesList.innerHTML = gestiones.map(g => `
                 <div class="timeline-item gestion">
                     <div class="timeline-header">
-                        <span><i class="fas fa-calendar"></i> ${formatDate(g.date)} — ${escapeHtml(g.time)}</span>
+                        <span><i class="fas fa-calendar"></i> ${formatDate(g.date)} — ${escapeHtml(g.time)}${g.user ? ` · <i class="fas fa-user"></i> ${escapeHtml(g.user)}` : ''}</span>
                         <span class="timeline-badge" style="background:#e0f2fe;color:#0369a1;"><i class="fas fa-headset"></i> ${escapeHtml(g.type)}</span>
                     </div>
                     <div class="timeline-title">Resultado: ${escapeHtml(g.result)}</div>
@@ -3761,7 +3771,7 @@ function calculateReportData(options = {}) {
         customFrom = '',
         customTo = '',
         clientIdScope = 'all',
-        userCobrador = 'Cobrador'
+        userCobrador = getCurrentUserDisplayName()
     } = options;
 
     const { fromDate, toDate } = getReportDateRange(periodPreset, customFrom, customTo);
@@ -4456,7 +4466,7 @@ function exportReportExcel(data) {
                 gestion.nextFollowUpDate || '',
                 promise ? promise.promisedDate : '',
                 promise ? (promise.promisedAmount || 0) : 0,
-                data.userCobrador || 'Cobrador'
+                gestion.user || data.userCobrador || 'Cobrador'
             ]);
         });
     }
@@ -4618,7 +4628,8 @@ function getAllCalendarActions() {
                             type: 'gestion',
                             text: actionText,
                             client: client,
-                            date: dateKey
+                            date: dateKey,
+                            user: g.user || ''
                         });
                     }
                 });
@@ -4792,6 +4803,7 @@ function renderDayActionsList(dateStr, actions) {
                     </span>
                 </div>
                 <div class="action-card-text">${escapeHtml(act.text)}</div>
+                ${act.user ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;"><i class="fas fa-user"></i> ${escapeHtml(act.user)}</div>` : ''}
                 <div class="action-card-footer">
                     <button type="button" class="btn-card-action btn-sm" onclick="openClientHistoryModal('${act.client.id}')">
                         <i class="fas fa-folder-open"></i> Ver Cliente
@@ -5017,7 +5029,7 @@ function renderGestionsHistoryTable() {
                             <span class="gestion-card-client">${escapeHtml(client.name)}</span>
                             <span class="gestion-card-dni">${clientDniStr}</span>
                         </div>
-                        <span class="gestion-card-time"><i class="fas fa-clock"></i> ${escapeHtml(gestion.time || '')} hs</span>
+                        <span class="gestion-card-time"><i class="fas fa-clock"></i> ${escapeHtml(gestion.time || '')} hs${gestion.user ? ` · <i class="fas fa-user"></i> ${escapeHtml(gestion.user)}` : ''}</span>
                     </div>
 
                     <div class="gestion-card-meta">
@@ -5462,7 +5474,7 @@ function openPaymentModal(id) {
     if (punitoriosGeneratedEl) punitoriosGeneratedEl.value = calculatedPenalty.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (punitoriosWaivedEl) punitoriosWaivedEl.value = '0,00';
     if (paymentTimeEl) paymentTimeEl.value = getCurrentTime();
-    if (paymentUserEl && !paymentUserEl.value) paymentUserEl.value = 'Cobrador';
+    if (paymentUserEl) paymentUserEl.value = getCurrentUserDisplayName();
 
     els.hasPaid.checked = client.paymentStatus === 'paid';
     els.isOverdue.checked = client.isOverdue;
@@ -5639,7 +5651,7 @@ async function handleSavePayment(e) {
     const payPeriodMonth = els.paymentPeriodMonth.value || client.periodMonth || paymentDate.substring(0, 7);
     const payInstallmentNumber = els.paymentInstallmentNumber.value.trim() || `${client.installmentNumber || 1}`;
     const payNote = els.paymentNotes.value.trim();
-    const paymentUserVal = document.getElementById('paymentUser') ? document.getElementById('paymentUser').value.trim() : 'Cobrador';
+    const paymentUserVal = getCurrentUserDisplayName();
 
     const punitoriosGen = parseCurrencyInput(document.getElementById('punitoriosGenerated') ? document.getElementById('punitoriosGenerated').value : 0);
     const punitoriosWaived = parseCurrencyInput(document.getElementById('punitoriosWaived') ? document.getElementById('punitoriosWaived').value : 0);
@@ -5727,7 +5739,7 @@ async function handleSavePayment(e) {
         paymentType: pType,
         daysOverdue: daysOverdue,
         notes: payNote,
-        user: paymentUserVal || 'Cobrador',
+        user: paymentUserVal,
         exported: false,
         exportedAt: null,
         promiseId: linkedPromiseId,
@@ -6055,7 +6067,7 @@ function setupEventListeners() {
                 customFrom,
                 customTo,
                 clientIdScope,
-                userCobrador: 'Cobrador'
+                userCobrador: getCurrentUserDisplayName()
             });
 
             renderReportPreview(reportData);
@@ -6432,6 +6444,8 @@ async function initAuth() {
             console.error('Error fetching Supabase session:', error);
         }
 
+        currentSessionUser = session?.user || null;
+
         if (session) {
             hideLoginModal();
             await onAuthenticated();
@@ -6440,6 +6454,7 @@ async function initAuth() {
         }
 
         supabaseClient.auth.onAuthStateChange(async (event, session) => {
+            currentSessionUser = session?.user || null;
             if (event === 'SIGNED_IN' && session) {
                 hideLoginModal();
                 await onAuthenticated();
