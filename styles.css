@@ -1133,7 +1133,6 @@ body {
     position: absolute;
     inset: 0;
     background: rgba(0,0,0,0.5);
-    backdrop-filter: blur(4px);
 }
 
 .modal-content {
@@ -2404,7 +2403,6 @@ form {
 
 .kpi-card {
     background: rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(8px);
     border-radius: var(--radius-md);
     padding: 0.65rem 0.75rem;
     color: var(--white);
